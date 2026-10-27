@@ -1,0 +1,6 @@
+{
+  "name": "ระบบบันทึกรายงานผลการจัดกิจกรรม โรงเรียนพังโคนวิทยาคม",
+  "description": "ระบบบันทึกรายงานผลการจัดกิจกรรมและบันทึกภาพกิจกรรม ปีการศึกษา 2568 โรงเรียนพังโคนวิทยาคม",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
