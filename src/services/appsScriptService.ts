@@ -93,27 +93,39 @@ export async function submitActivityToAppsScript(
     });
 
     // Prepare photos payload with compressed base64
-    const photosPayload = (record.photos || []).map((p) => ({
-      name: p.name,
-      type: p.type,
-      size: p.size,
-      base64: p.base64 || '',
-    }));
+    const photosPayload = (record.photos || []).map((p) => {
+      let b64 = p.base64 || '';
+      if (!b64 && p.url && p.url.startsWith('data:')) {
+        b64 = p.url.split(',')[1] || '';
+      }
+      return {
+        name: p.name,
+        type: p.type || 'image/jpeg',
+        size: p.size,
+        base64: b64,
+      };
+    });
 
     // Prepare certificates payload
-    const certsPayload = (record.certificates || []).map((c) => ({
-      name: c.name,
-      type: c.type,
-      size: c.size,
-      base64: c.base64 || '',
-    }));
+    const certsPayload = (record.certificates || []).map((c) => {
+      let b64 = c.base64 || '';
+      if (!b64 && c.url && c.url.startsWith('data:')) {
+        b64 = c.url.split(',')[1] || '';
+      }
+      return {
+        name: c.name,
+        type: c.type,
+        size: c.size,
+        base64: b64,
+      };
+    });
 
     // Prepare documents payload
     const docsPayload = (record.documents || []).map((d) => ({
       name: d.name,
       type: d.type,
       size: d.size,
-      base64: d.base64 || '',
+      base64: d.base64 || (d.url && d.url.startsWith('data:') ? d.url.split(',')[1] : ''),
     }));
 
     const payload = {
@@ -197,26 +209,34 @@ export async function submitActivityToAppsScript(
     }
 
     // Update local record URLs if returned, or maintain previews
-    const updatedPhotos: FileAttachment[] = record.photos.map((p, idx) => ({
-      ...p,
-      url:
-        uploadedUrls.photos[idx] ||
-        p.url ||
-        (p.base64 ? `data:${p.type};base64,${p.base64}` : ''),
-    }));
+    const updatedPhotos: FileAttachment[] = record.photos.map((p, idx) => {
+      const returned = uploadedUrls.photos[idx];
+      return {
+        ...p,
+        url: returned ? formatDriveImageUrl(returned) : (p.url || (p.base64 ? `data:${p.type};base64,${p.base64}` : '')),
+        originalUrl: returned || p.originalUrl,
+      };
+    });
 
-    const updatedCertificates: FileAttachment[] = (record.certificates || []).map((c, idx) => ({
-      ...c,
-      url:
-        uploadedUrls.certificates[idx] ||
-        c.url ||
-        (c.base64 ? (c.type.startsWith('image/') ? `data:${c.type};base64,${c.base64}` : '') : ''),
-    }));
+    const updatedCertificates: FileAttachment[] = (record.certificates || []).map((c, idx) => {
+      const returned = uploadedUrls.certificates[idx];
+      return {
+        ...c,
+        url: returned
+          ? formatDriveImageUrl(returned)
+          : (c.url || (c.base64 ? (c.type.startsWith('image/') ? `data:${c.type};base64,${c.base64}` : '') : '')),
+        originalUrl: returned || c.originalUrl,
+      };
+    });
 
-    const updatedDocuments: FileAttachment[] = record.documents.map((d, idx) => ({
-      ...d,
-      url: uploadedUrls.documents[idx] || d.url,
-    }));
+    const updatedDocuments: FileAttachment[] = record.documents.map((d, idx) => {
+      const returned = uploadedUrls.documents[idx];
+      return {
+        ...d,
+        url: returned || d.url,
+        originalUrl: returned || d.originalUrl,
+      };
+    });
 
     const finalRecord: ActivityRecord = {
       ...record,
@@ -261,19 +281,113 @@ export async function submitActivityToAppsScript(
   }
 }
 
+/**
+ * Helper: Convert any Google Drive URL, Drive ID, or image link
+ * into a high-res direct image thumbnail URL that renders reliably in <img> tags.
+ */
+export function formatDriveImageUrl(url: string | undefined): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+
+  // If already base64 data URL or blob
+  if (trimmed.startsWith('data:image') || trimmed.startsWith('blob:')) {
+    return trimmed;
+  }
+
+  // If it's a folder link, it's not a direct photo
+  if (trimmed.includes('/folders/')) {
+    return '';
+  }
+
+  // Match Google Drive file ID:
+  // e.g. /file/d/FILE_ID/view, id=FILE_ID, /d/FILE_ID, /thumbnail?id=FILE_ID
+  const driveRegex = /(?:file\/d\/|[?&]id=|\/d\/|thumbnail\?id=)([a-zA-Z0-9_-]{20,})/;
+  const match = trimmed.match(driveRegex);
+  if (match && match[1]) {
+    const fileId = match[1];
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+  }
+
+  // Bare Drive ID (e.g. alphanumeric 25+ characters)
+  if (/^[a-zA-Z0-9_-]{25,}$/.test(trimmed)) {
+    return `https://drive.google.com/thumbnail?id=${trimmed}&sz=w1200`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Alternate Google CDN image link for fallback on <img> error
+ */
+export function getAlternateDriveImageUrl(url: string | undefined): string {
+  if (!url) return '';
+  const driveRegex = /(?:file\/d\/|[?&]id=|\/d\/|thumbnail\?id=)([a-zA-Z0-9_-]{20,})/;
+  const match = url.match(driveRegex);
+  if (match && match[1]) {
+    return `https://lh3.googleusercontent.com/d/${match[1]}=w1200`;
+  }
+  return '';
+}
+
+/**
+ * Format any date string (including GViz "Date(2026,9,27)") into clean Thai Buddhist date or readable date
+ */
+export function formatDisplayDate(dateStr: string | undefined): string {
+  if (!dateStr) return '-';
+  const trimmed = dateStr.trim();
+
+  const THAI_MONTHS = [
+    '',
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
+  ];
+
+  // GViz format: Date(year, monthIndex, day[, hour, minute, second])
+  const gvizMatch = trimmed.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
+  if (gvizMatch) {
+    const year = parseInt(gvizMatch[1], 10);
+    const month = parseInt(gvizMatch[2], 10) + 1; // 0-indexed in GViz
+    const day = parseInt(gvizMatch[3], 10);
+    const thaiYear = year < 2500 ? year + 543 : year;
+    return `${day} ${THAI_MONTHS[month] || month} ${thaiYear}`;
+  }
+
+  // Standard ISO format: YYYY-MM-DD
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const month = parseInt(isoMatch[2], 10);
+    const day = parseInt(isoMatch[3], 10);
+    const thaiYear = year < 2500 ? year + 543 : year;
+    return `${day} ${THAI_MONTHS[month] || month} ${thaiYear}`;
+  }
+
+  return trimmed;
+}
+
 const LOCAL_STORAGE_KEY = 'PKW_ACTIVITIES_2568_SHEET_V2';
 
 /**
- * Filter out any mock/demo data from previous versions.
- * Only keeps real user submitted records.
+ * Filter out any mock/demo data from previous versions or deleted test items.
  */
 function filterOutDemoRecords(records: ActivityRecord[]): ActivityRecord[] {
   if (!Array.isArray(records)) return [];
-  const demoIds = new Set(['PKW-2568-001', 'PKW-2568-002', 'PKW-2568-003']);
+  const demoIds = new Set(['PKW-2568-001', 'PKW-2568-002', 'PKW-2568-003', 'PKW-2568-9600']);
   return records.filter((r) => {
     if (!r || !r.id) return false;
     if (demoIds.has(r.id)) return false;
-    // Check if contains demo unsplash image
+    // Check if test dummy record with awardName "5" and teacherName "5"
+    if (r.awardName === '5' && (r.teacherName === '5' || r.organizer === '5')) return false;
     const hasUnsplash = r.photos?.some((p) => p.url?.includes('images.unsplash.com'));
     if (hasUnsplash && r.id.startsWith('PKW-2568-00')) return false;
     return true;
@@ -287,13 +401,10 @@ export function loadStoredActivities(defaultRecords: ActivityRecord[] = []): Act
     }
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) {
-      const cleanDefaults = filterOutDemoRecords(defaultRecords);
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleanDefaults));
-      return cleanDefaults;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    const cleaned = filterOutDemoRecords(Array.isArray(parsed) ? parsed : []);
-    return cleaned;
+    return filterOutDemoRecords(Array.isArray(parsed) ? parsed : []);
   } catch (e) {
     console.error('Failed to load activities from storage', e);
     return [];
@@ -308,6 +419,14 @@ export function saveAllActivities(records: ActivityRecord[]) {
   } catch (e) {
     console.error('Failed to save activities to storage', e);
   }
+}
+
+export function clearActivitiesStorage() {
+  try {
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
+  } catch (e) {}
 }
 
 export function saveRecordToLocalStorage(record: ActivityRecord) {
@@ -348,7 +467,7 @@ function parseGvizTable(table: any): ActivityRecord[] {
   const yearCol = findColIndex(['ปีการศึกษา', 'year']);
   const levelCol = findColIndex(['ระดับรางวัล', 'ระดับ', 'level']);
   const deptCol = findColIndex(['กลุ่มสาระ', 'department']);
-  const nameCol = findColIndex(['ชื่อรางวัล', 'ชื่อกิจกรรม', 'awardName', 'name']);
+  const nameCol = findColIndex(['ชื่อรางวัล', 'ชื่อกิจกรรม', 'awardname', 'name']);
   const dateCol = findColIndex(['วันที่ได้รับรางวัล', 'วันที่', 'date']);
   const orgCol = findColIndex(['หน่วยงานที่จัด', 'หน่วยงาน', 'organizer']);
   const teacherCol = findColIndex(['ครูผู้รับรางวัล', 'ครู', 'teacher']);
@@ -360,10 +479,26 @@ function parseGvizTable(table: any): ActivityRecord[] {
   const photosCol = findColIndex(['ภาพถ่าย', 'รูปภาพ', 'photo']);
   const certsCol = findColIndex(['เกียรติบัตร', 'cert']);
   const docsCol = findColIndex(['เอกสาร', 'doc']);
-  const evidenceJsonCol = findColIndex(['ไฟล์หลักฐาน(JSON)', 'evidence']);
+  const evidenceJsonCol = findColIndex(['ไฟล์หลักฐาน(json)', 'evidence']);
   const timeCol = findColIndex(['วันเวลาที่บันทึก', 'timestamp', 'เวลา']);
 
   const records: ActivityRecord[] = [];
+
+  // Helper to extract URLs from text (handles newlines, commas, JSON)
+  const extractUrls = (text: string): string[] => {
+    if (!text) return [];
+    if (text.startsWith('[') && text.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          return parsed.map(String).filter((u) => u.startsWith('http'));
+        }
+      } catch (e) {}
+    }
+    const matches = text.match(/https?:\/\/[^\s"'<>\),]+/g);
+    if (matches) return matches;
+    return text.split(/\r?\n|,/).map((s) => s.trim()).filter((u) => u.startsWith('http'));
+  };
 
   for (let r = 0; r < table.rows.length; r++) {
     const row = table.rows[r];
@@ -371,8 +506,15 @@ function parseGvizTable(table: any): ActivityRecord[] {
 
     const getVal = (idx: number): string => {
       if (idx < 0 || idx >= row.c.length || !row.c[idx]) return '';
-      const v = row.c[idx].v;
-      return v !== null && v !== undefined ? String(v).trim() : '';
+      const cell = row.c[idx];
+      if (cell.v !== null && cell.v !== undefined) {
+        const vStr = String(cell.v).trim();
+        if (vStr.startsWith('Date(') && cell.f) {
+          return String(cell.f).trim();
+        }
+        return vStr;
+      }
+      return cell.f ? String(cell.f).trim() : '';
     };
 
     const awardName = nameCol >= 0 ? getVal(nameCol) : getVal(4);
@@ -380,7 +522,7 @@ function parseGvizTable(table: any): ActivityRecord[] {
     const rawYear = yearCol >= 0 ? getVal(yearCol) : '';
     const rawLevel = levelCol >= 0 ? getVal(levelCol) : '';
 
-    // Skip empty rows and table header rows (e.g. 'id', 'ปีการศึกษา', 'ชื่อรางวัล', 'กลุ่มสาระ')
+    // Skip empty rows and table header rows
     const isHeaderRow =
       awardName === 'ชื่อรางวัล' ||
       awardName === 'ชื่อรางวัล/กิจกรรม' ||
@@ -399,28 +541,30 @@ function parseGvizTable(table: any): ActivityRecord[] {
     const academicYear = (yearCol >= 0 && getVal(yearCol)) ? getVal(yearCol) : '2568';
     const awardLevel = ((levelCol >= 0 && getVal(levelCol)) ? getVal(levelCol) : 'ระดับเขตพื้นที่') as any;
     const department = ((deptCol >= 0 && getVal(deptCol)) ? getVal(deptCol) : 'กลุ่มบริหารงานบุคคล') as any;
-    const awardDate = dateCol >= 0 ? getVal(dateCol) : '';
+    const rawDate = dateCol >= 0 ? getVal(dateCol) : '';
+    const awardDate = formatDisplayDate(rawDate);
     const organizer = orgCol >= 0 ? getVal(orgCol) : '';
     const teacherName = teacherCol >= 0 ? getVal(teacherCol) : '';
     const studentName = studentCol >= 0 ? getVal(studentCol) : '-';
     const objective = objCol >= 0 ? getVal(objCol) : '';
     const additionalDetails = detailsCol >= 0 ? getVal(detailsCol) : '';
     const outcomes = outcomesCol >= 0 ? getVal(outcomesCol) : '';
-    const folderUrl = folderCol >= 0 ? getVal(folderCol) : '';
+    let folderUrl = folderCol >= 0 ? getVal(folderCol) : '';
 
     let photoUrls: string[] = [];
     let certUrls: string[] = [];
     let docUrls: string[] = [];
 
-    // Check evidence JSON column if used
+    // Check evidence JSON column if present
     if (evidenceJsonCol >= 0) {
       const rawEvidence = getVal(evidenceJsonCol);
       if (rawEvidence && rawEvidence.startsWith('{')) {
         try {
           const parsed = JSON.parse(rawEvidence);
-          if (Array.isArray(parsed.photos)) photoUrls = parsed.photos;
-          if (Array.isArray(parsed.certificates)) certUrls = parsed.certificates;
-          if (Array.isArray(parsed.documents)) docUrls = parsed.documents;
+          if (Array.isArray(parsed.photos)) photoUrls = [...photoUrls, ...parsed.photos];
+          if (Array.isArray(parsed.certificates)) certUrls = [...certUrls, ...parsed.certificates];
+          if (Array.isArray(parsed.documents)) docUrls = [...docUrls, ...parsed.documents];
+          if (!folderUrl && parsed.folderUrl) folderUrl = parsed.folderUrl;
         } catch (e) {}
       }
     }
@@ -429,21 +573,26 @@ function parseGvizTable(table: any): ActivityRecord[] {
     if (photosCol >= 0) {
       const rawP = getVal(photosCol);
       if (rawP) {
-        photoUrls = [...photoUrls, ...rawP.split(/\r?\n/).filter((u) => u.startsWith('http'))];
+        photoUrls = [...photoUrls, ...extractUrls(rawP)];
       }
     }
     if (certsCol >= 0) {
       const rawC = getVal(certsCol);
       if (rawC) {
-        certUrls = [...certUrls, ...rawC.split(/\r?\n/).filter((u) => u.startsWith('http'))];
+        certUrls = [...certUrls, ...extractUrls(rawC)];
       }
     }
     if (docsCol >= 0) {
       const rawD = getVal(docsCol);
       if (rawD) {
-        docUrls = [...docUrls, ...rawD.split(/\r?\n/).filter((u) => u.startsWith('http'))];
+        docUrls = [...docUrls, ...extractUrls(rawD)];
       }
     }
+
+    // De-duplicate URLs
+    const uniquePhotos = Array.from(new Set(photoUrls.filter(Boolean)));
+    const uniqueCerts = Array.from(new Set(certUrls.filter(Boolean)));
+    const uniqueDocs = Array.from(new Set(docUrls.filter(Boolean)));
 
     records.push({
       id,
@@ -459,23 +608,25 @@ function parseGvizTable(table: any): ActivityRecord[] {
       additionalDetails,
       outcomes,
       folderUrl,
-      photos: photoUrls.map((url, i) => ({
+      photos: uniquePhotos.map((url, i) => ({
         name: `ภาพถ่าย_${i + 1}`,
         type: 'image/jpeg',
         size: 0,
-        url,
+        url: formatDriveImageUrl(url),
+        originalUrl: url,
       })),
-      certificates: certUrls.map((url, i) => ({
+      certificates: uniqueCerts.map((url, i) => ({
         name: `เกียรติบัตร_${i + 1}`,
         type: url.includes('.pdf') ? 'application/pdf' : 'image/jpeg',
         size: 0,
-        url,
+        url: formatDriveImageUrl(url),
+        originalUrl: url,
       })),
-      documents: docUrls.map((url, i) => ({
+      documents: uniqueDocs.map((url, i) => ({
         name: `เอกสาร_${i + 1}`,
         type: 'application/pdf',
         size: 0,
-        url,
+        url: url,
       })),
       createdAt: timeCol >= 0 && getVal(timeCol) ? getVal(timeCol) : new Date().toISOString(),
       syncStatus: 'synced',
@@ -487,11 +638,13 @@ function parseGvizTable(table: any): ActivityRecord[] {
 }
 
 /**
- * Fetch real activity records directly from Google Sheet!
- * Queries Google Sheet visualization API and Apps Script doGet.
- * Returns only real data (zero demo records).
+ * Fetch real activity records directly from Google Sheet (REAL-TIME SINGLE SOURCE OF TRUTH).
+ * When Google Sheet responds, it overwrites local cache completely (including [] if sheet is empty).
  */
 export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]> {
+  let gvizSucceeded = false;
+  let allRecords: ActivityRecord[] = [];
+
   // Method 1: Google Sheet Visualization API for tab 'บันทึกผลงานกิจกรรม'
   try {
     const sheetParam = encodeURIComponent('บันทึกผลงานกิจกรรม');
@@ -501,11 +654,11 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
       const text = await res.text();
       const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
       if (match && match[1]) {
+        gvizSucceeded = true;
         const json = JSON.parse(match[1]);
         const records = parseGvizTable(json.table);
         if (records.length > 0) {
-          saveAllActivities(records);
-          return records;
+          allRecords = records;
         }
       }
     }
@@ -514,41 +667,53 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
   }
 
   // Method 2: Google Sheet Visualization API for default sheet / Sheet1
-  try {
-    const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&t=${Date.now()}`;
-    const res = await fetch(gvizUrl);
-    if (res.ok) {
-      const text = await res.text();
-      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
-      if (match && match[1]) {
-        const json = JSON.parse(match[1]);
-        const records = parseGvizTable(json.table);
-        if (records.length > 0) {
-          saveAllActivities(records);
-          return records;
+  if (allRecords.length === 0) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&t=${Date.now()}`;
+      const res = await fetch(gvizUrl);
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
+        if (match && match[1]) {
+          gvizSucceeded = true;
+          const json = JSON.parse(match[1]);
+          const records = parseGvizTable(json.table);
+          if (records.length > 0) {
+            allRecords = records;
+          }
         }
       }
+    } catch (err) {
+      console.warn('Gviz default tab fetch error:', err);
     }
-  } catch (err) {
-    console.warn('Gviz default tab fetch error:', err);
   }
 
   // Method 3: Google Apps Script Web App doGet
-  try {
-    const appsScriptUrl = `${APPS_SCRIPT_CONFIG.ENDPOINT_URL}?action=getActivities&sheetId=${APPS_SCRIPT_CONFIG.SHEET_ID}&t=${Date.now()}`;
-    const res = await fetch(appsScriptUrl);
-    if (res.ok) {
-      const json = await res.json();
-      if (json && Array.isArray(json.records) && json.records.length > 0) {
-        saveAllActivities(json.records);
-        return json.records;
+  if (allRecords.length === 0) {
+    try {
+      const appsScriptUrl = `${APPS_SCRIPT_CONFIG.ENDPOINT_URL}?action=getActivities&sheetId=${APPS_SCRIPT_CONFIG.SHEET_ID}&t=${Date.now()}`;
+      const res = await fetch(appsScriptUrl);
+      if (res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.records)) {
+          gvizSucceeded = true;
+          if (json.records.length > 0) {
+            allRecords = json.records;
+          }
+        }
       }
+    } catch (appsScriptErr) {
+      console.warn('Apps Script doGet failed:', appsScriptErr);
     }
-  } catch (appsScriptErr) {
-    console.warn('Apps Script doGet failed:', appsScriptErr);
   }
 
-  // Fallback: Return only non-demo items from localStorage
+  // REAL-TIME GUARANTEE: If Google Sheet query succeeded, the sheet's state IS authoritative.
+  if (gvizSucceeded) {
+    saveAllActivities(allRecords);
+    return allRecords;
+  }
+
+  // Fallback ONLY when totally offline / network unreachable
   return loadStoredActivities([]);
 }
 

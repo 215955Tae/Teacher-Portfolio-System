@@ -22,6 +22,7 @@ export interface FileAttachment {
   size: number;
   base64?: string;
   url?: string;
+  originalUrl?: string;
 }
 
 export interface ActivityRecord {
