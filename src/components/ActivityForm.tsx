@@ -481,14 +481,17 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({
 
         {/* Section 4: แนบไฟล์หลักฐาน (ภาพ 1-3 รูป และไฟล์ PDF) */}
         <div className="bg-white rounded-xl shadow-md p-6 border border-slate-200 space-y-6">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
               <Upload className="w-4 h-4 text-emerald-600" />
               4. แนบไฟล์หลักฐานและภาพถ่ายกิจกรรม
             </h3>
-            <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-medium">
-              สร้างโฟลเดอร์กลุ่มสาระ ➔ โฟลเดอร์ผู้อัปโหลดใน Google Drive อัตโนมัติ
+            <span className="text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 font-medium">
+              Activities ➔ 1.กลุ่มสาระ ➔ 2.ชื่อครู ➔ 3.ผลงาน (รูปกิจกรรม, เกียรติบัตร, ไฟล์เอกสาร)
             </span>
+          </div>
+          <div className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+            ระบบจะสร้างหรือใช้โฟลเดอร์ตามข้อมูลที่กรอกเข้ามาใน Google Drive ID: <code className="font-mono text-slate-700 font-bold">1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym</code> (ไม่สร้างโฟลเดอร์ซ้ำซ้อนหากมีอยู่แล้ว)
           </div>
 
           {/* อัปโหลดภาพถ่ายกิจกรรม (1-3 รูปต่อกิจกรรม) */}

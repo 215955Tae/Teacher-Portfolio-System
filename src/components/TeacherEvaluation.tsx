@@ -23,6 +23,7 @@ import {
 import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
 import { DEPARTMENTS } from '../data/initialData';
+import { getPreviewMedia } from '../services/appsScriptService';
 
 interface TeacherEvaluationProps {
   records: ActivityRecord[];
@@ -660,18 +661,22 @@ export const TeacherEvaluation: React.FC<TeacherEvaluationProps> = ({
                             <span className="text-xs font-mono font-bold text-slate-400 mt-0.5 w-6">
                               {idx + 1}.
                             </span>
-                            {item.photos && item.photos.length > 0 && (item.photos[0].url || item.photos[0].base64) && (
-                              <div className="w-10 h-10 rounded-md overflow-hidden border border-slate-200 shrink-0 mt-0.5">
-                                <ActivityImage
-                                  src={item.photos[0].url || (item.photos[0].base64 ? `data:${item.photos[0].type};base64,${item.photos[0].base64}` : '')}
-                                  originalUrl={item.photos[0].originalUrl}
-                                  alt={item.awardName}
-                                  containerClassName="w-full h-full"
-                                  className="w-full h-full object-cover"
-                                  fallbackTitle=""
-                                />
-                              </div>
-                            )}
+                            {(() => {
+                              const preview = getPreviewMedia(item);
+                              if (preview.kind === 'none') return null;
+                              return (
+                                <div className="w-10 h-10 rounded-md overflow-hidden border border-slate-200 shrink-0 mt-0.5">
+                                  <ActivityImage
+                                    src={preview.url}
+                                    originalUrl={preview.originalUrl}
+                                    alt={item.awardName}
+                                    containerClassName="w-full h-full"
+                                    className="w-full h-full object-cover"
+                                    fallbackTitle=""
+                                  />
+                                </div>
+                              );
+                            })()}
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-bold text-slate-900 hover:text-blue-600 transition-colors">

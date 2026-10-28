@@ -4,7 +4,7 @@ export const APPS_SCRIPT_CONFIG = {
   ENDPOINT_URL:
     'https://script.google.com/macros/s/AKfycbzAY4gZMhAYG9qMxp5mWk6Of6KJIHJf3c67sjTeYhCUNeUt_yK9l8qW3VTW3D_EKZ6Ysg/exec',
   SHEET_ID: '1etr8iF8qK5y_B1apfMI_2rjFy4OY5RJPV6RaTbcrmbg',
-  FOLDER_ID: '1lgllj4jH0Jpyx40vxy9VnY2G7P5DddXF',
+  FOLDER_ID: '1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym',
 };
 
 /**
@@ -198,6 +198,65 @@ export function formatDisplayDate(dateStr: string | undefined): string {
   return trimmed;
 }
 
+export interface PreviewMediaInfo {
+  url: string;
+  originalUrl?: string;
+  kind: 'photo' | 'certificate' | 'none';
+  label: string;
+  count: number;
+}
+
+/**
+ * Extract one sample preview from an activity record, prioritizing photo images first,
+ * falling back to certificate images, and returning the display URL and source kind.
+ */
+export function getPreviewMedia(record: ActivityRecord | null | undefined): PreviewMediaInfo {
+  if (!record) {
+    return { url: '', originalUrl: '', kind: 'none', label: 'ไม่มีภาพ', count: 0 };
+  }
+
+  // 1. First priority: Activity photos (ภาพถ่ายกิจกรรม 1-3 รูป)
+  const photos = record.photos || [];
+  for (const p of photos) {
+    const raw = (p.url || (p.base64 ? `data:${p.type || 'image/jpeg'};base64,${p.base64}` : '')).trim();
+    if (raw && !raw.includes('/folders/')) {
+      return {
+        url: formatDriveImageUrl(raw),
+        originalUrl: p.originalUrl || getGoogleDriveViewUrl(raw),
+        kind: 'photo',
+        label: `ภาพกิจกรรม (${photos.length} รูป)`,
+        count: photos.length,
+      };
+    }
+  }
+
+  // 2. Second priority: Certificate / Diploma (เกียรติบัตร / วุฒิบัตร)
+  const certs = record.certificates || [];
+  for (const c of certs) {
+    const raw = (c.url || (c.base64 ? `data:${c.type || 'image/jpeg'};base64,${c.base64}` : '')).trim();
+    if (raw && !raw.includes('/folders/')) {
+      const isExplicitPdf = c.name?.toLowerCase().endsWith('.pdf') && !c.base64 && !raw.startsWith('data:image');
+      if (!isExplicitPdf || raw.includes('google.com') || raw.startsWith('data:image')) {
+        return {
+          url: formatDriveImageUrl(raw),
+          originalUrl: c.originalUrl || getGoogleDriveViewUrl(raw),
+          kind: 'certificate',
+          label: 'ภาพเกียรติบัตร / วุฒิบัตร',
+          count: certs.length,
+        };
+      }
+    }
+  }
+
+  return {
+    url: '',
+    originalUrl: '',
+    kind: 'none',
+    label: 'ยังไม่มีภาพตัวอย่าง',
+    count: 0,
+  };
+}
+
 const LOCAL_STORAGE_KEY = 'PKW_ACTIVITIES_2568_SHEET_V3';
 
 /**
@@ -209,8 +268,8 @@ function filterOutDemoRecords(records: ActivityRecord[]): ActivityRecord[] {
   return records.filter((r) => {
     if (!r || !r.id) return false;
     if (demoIds.has(r.id)) return false;
-    // Check if test dummy record with awardName "5" and teacherName "5"
-    if (r.awardName === '5' && (r.teacherName === '5' || r.organizer === '5')) return false;
+    // Filter our automated background test rows
+    if (r.id.startsWith('PKW-TEST-') || r.id.startsWith('PKW-DEBUG-')) return false;
     const hasUnsplash = r.photos?.some((p) => p.url?.includes('images.unsplash.com'));
     if (hasUnsplash && r.id.startsWith('PKW-2568-00')) return false;
     return true;
@@ -669,9 +728,27 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
   }
 
   // REAL-TIME GUARANTEE:
-  // If the sheet was reached, Google Sheet IS the single source of truth.
-  // If the sheet has 0 rows, records = [] and local cache is cleared.
+  // If the sheet was reached, Google Sheet is the authoritative source.
   if (sheetReached) {
+    // If local cache had photos for these records, preserve them so they are not wiped out
+    const localRecords = loadStoredActivities([]);
+    const localPhotoMap = new Map<string, FileAttachment[]>();
+    localRecords.forEach((lr) => {
+      if (lr.photos && lr.photos.length > 0) {
+        localPhotoMap.set(lr.id, lr.photos);
+      }
+    });
+
+    records = records.map((r) => {
+      if ((!r.photos || r.photos.length === 0) && localPhotoMap.has(r.id)) {
+        return {
+          ...r,
+          photos: localPhotoMap.get(r.id)!,
+        };
+      }
+      return r;
+    });
+
     saveAllActivities(records);
     return records;
   }
@@ -693,17 +770,19 @@ export async function submitActivityToAppsScript(
       message: 'กำลังเตรียมข้อมูลและปรับขนาดภาพให้เหมาะสมกับการอัปโหลด...',
     });
 
-    // Prepare photos payload with compressed base64
+    // Prepare photos payload: pass dataUrl in url property for guaranteed storage in Google Sheet
     const photosPayload = (record.photos || []).map((p) => {
       let b64 = p.base64 || '';
       if (!b64 && p.url && p.url.startsWith('data:')) {
-        b64 = p.url.split(',')[1] || '';
+        b64 = p.url.split('base64,')[1] || '';
       }
+      const dataUrl = p.url && p.url.startsWith('data:') ? p.url : (b64 ? `data:${p.type || 'image/jpeg'};base64,${b64}` : '');
       return {
         name: p.name,
         type: p.type || 'image/jpeg',
         size: p.size,
-        base64: b64,
+        url: dataUrl || p.url || '',
+        fileBase64: b64,
       };
     });
 
@@ -711,13 +790,16 @@ export async function submitActivityToAppsScript(
     const certsPayload = (record.certificates || []).map((c) => {
       let b64 = c.base64 || '';
       if (!b64 && c.url && c.url.startsWith('data:')) {
-        b64 = c.url.split(',')[1] || '';
+        b64 = c.url.split('base64,')[1] || '';
       }
+      const isImg = c.type?.startsWith('image/');
+      const dataUrl = c.url && c.url.startsWith('data:') ? c.url : (b64 && isImg ? `data:${c.type};base64,${b64}` : '');
       return {
         name: c.name,
         type: c.type,
         size: c.size,
-        base64: b64,
+        url: dataUrl || c.url || '',
+        fileBase64: b64,
       };
     });
 
@@ -726,7 +808,7 @@ export async function submitActivityToAppsScript(
       name: d.name,
       type: d.type,
       size: d.size,
-      base64: d.base64 || (d.url && d.url.startsWith('data:') ? d.url.split(',')[1] : ''),
+      fileBase64: d.base64 || (d.url && d.url.startsWith('data:') ? d.url.split('base64,')[1] : ''),
     }));
 
     const payload = {
@@ -887,18 +969,25 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  *
  * การตั้งค่า:
  * SHEET_ID  : 1etr8iF8qK5y_B1apfMI_2rjFy4OY5RJPV6RaTbcrmbg
- * FOLDER_ID : 1lgllj4jH0Jpyx40vxy9VnY2G7P5DddXF
+ * FOLDER_ID : 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym (Activities)
  *
  * คุณสมบัติสำคัญ:
- * 1. ระบบโฟลเดอร์ Google Drive:
- *    สร้างโฟลเดอร์กลุ่มสาระ -> แล้วสร้างโฟลเดอร์ผู้อัปโหลดข้างใน -> บันทึกไฟล์ทั้งหมดในนั้น
+ * 1. ระบบโฟลเดอร์ Google Drive จัดเรียง 4 ระดับ:
+ *    Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym)
+ *      └── 1. กลุ่มสาระการเรียนรู้ (ตามที่เลือกในหน้าเพิ่มกิจกรรม)
+ *            └── 2. ชื่อของครูที่ส่งผลงาน
+ *                  └── 3. ผลงาน (ชื่อรางวัล/กิจกรรม)
+ *                        ├── รูปกิจกรรม (ภาพถ่ายกิจกรรม 1-3 รูป)
+ *                        ├── เกียรติบัตร (ไฟล์เกียรติบัตร/วุฒิบัตร)
+ *                        └── ไฟล์เอกสาร (ไฟล์เอกสารเพิ่มเติม)
+ *    * ไม่สร้างโฟลเดอร์ซ้ำซ้อน หากมีอยู่แล้วจะใช้อันเดิมเสมอ (getOrCreateSubfolder)
  * 2. บันทึกลิงก์รูปภาพในรูปแบบ Direct High-Res CDN Thumbnail ให้แสดงผลตัวอย่างรูปภาพได้ทันที 100%
  * 3. มีฟังก์ชัน doGet สำหรับดึงข้อมูลผลงานทั้งหมดแบบเรียลไทม์
  */
 
 const CONFIG = {
   SHEET_ID: '1etr8iF8qK5y_B1apfMI_2rjFy4OY5RJPV6RaTbcrmbg',
-  FOLDER_ID: '1lgllj4jH0Jpyx40vxy9VnY2G7P5DddXF',
+  FOLDER_ID: '1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym',
   SHEET_NAME: 'บันทึกผลงานกิจกรรม'
 };
 
@@ -949,8 +1038,14 @@ function doPost(e) {
     var outcomes = data.outcomes || '';
     var timestamp = new Date().toLocaleString('th-TH');
 
-    // 1. จัดการโฟลเดอร์ Google Drive:
-    // โฟลเดอร์หลัก -> โฟลเดอร์กลุ่มสาระ -> โฟลเดอร์ผู้อัปโหลด
+    // 1. จัดการโครงสร้างโฟลเดอร์ Google Drive:
+    // Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym)
+    //   └── 1. กลุ่มสาระการเรียนรู้
+    //         └── 2. ชื่อของครูที่ส่งผลงาน
+    //               └── 3. ผลงาน
+    //                     ├── รูปกิจกรรม (ภาพถ่ายกิจกรรม 1-3 รูป)
+    //                     ├── เกียรติบัตร (ไฟล์เกียรติบัตร)
+    //                     └── ไฟล์เอกสาร (ไฟล์เอกสารเพิ่มเติม)
     var uploaderFolderUrl = '';
     var photoUrls = [];
     var certUrls = [];
@@ -958,80 +1053,127 @@ function doPost(e) {
 
     try {
       var rootFolder = DriveApp.getFolderById(folderId);
-      var deptFolder = getOrCreateSubfolder(rootFolder, department);
-      var uploaderFolder = getOrCreateSubfolder(deptFolder, teacherName);
-      uploaderFolderUrl = uploaderFolder.getUrl();
 
-      // บันทึกรูปภาพกิจกรรม
+      // ระดับ 1: กลุ่มสาระการเรียนรู้ (เช่น 3. วิทยาศาสตร์และเทคโนโลยี)
+      var deptFolder = getOrCreateSubfolder(rootFolder, department);
+
+      // ระดับ 2: ชื่อของครูที่ส่งผลงาน
+      var teacherFolder = getOrCreateSubfolder(deptFolder, teacherName);
+
+      // ระดับ 3: ผลงาน (ชื่อรางวัลหรือกิจกรรม)
+      var activityFolderName = (awardName || id).toString().trim();
+      var activityFolder = getOrCreateSubfolder(teacherFolder, activityFolderName);
+      uploaderFolderUrl = activityFolder.getUrl();
+
+      // ระดับ 4: โฟลเดอร์ย่อย 3 โฟลเดอร์ข้างในผลงาน
+      var photosSubfolder = getOrCreateSubfolder(activityFolder, 'รูปกิจกรรม');
+      var certsSubfolder = getOrCreateSubfolder(activityFolder, 'เกียรติบัตร');
+      var docsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เอกสาร');
+
+      // 1) บันทึกรูปภาพกิจกรรม (1–3 รูปต่อกิจกรรม) ลงในโฟลเดอร์ "รูปกิจกรรม"
       var photos = data.photos || [];
       if (typeof photos === 'string') {
         try { photos = JSON.parse(photos); } catch(pe) {}
       }
       for (var i = 0; i < photos.length; i++) {
         var p = photos[i];
-        if (p && p.base64) {
+        if (!p) continue;
+        var b64 = p.base64 || p.fileBase64 || '';
+        if (!b64 && p.url && p.url.indexOf('base64,') !== -1) {
+          b64 = p.url.split('base64,')[1];
+        }
+        var savedPhotoUrl = '';
+        if (b64) {
           try {
-            var decodedPhoto = Utilities.base64Decode(p.base64);
+            var decodedPhoto = Utilities.base64Decode(b64);
             var mimePhoto = p.type || 'image/jpeg';
             var photoName = id + '_ภาพ_' + (i + 1) + '_' + (p.name || 'photo.jpg');
             var photoBlob = Utilities.newBlob(decodedPhoto, mimePhoto, photoName);
-            var photoFile = uploaderFolder.createFile(photoBlob);
-            photoFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            var photoFile = photosSubfolder.createFile(photoBlob);
             var fileId = photoFile.getId();
-            // บันทึก URL แบบ Thumbnail เพื่อให้แท็ก <img> แสดงภาพตัวอย่างได้ทันที
-            var thumbUrl = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
-            photoUrls.push(thumbUrl);
+            savedPhotoUrl = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+            try {
+              photoFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            } catch(shareErr) {
+              console.warn('Set sharing skipped: ' + shareErr);
+            }
           } catch(errPhoto) {
-            console.error('Error saving photo: ' + errPhoto);
+            console.error('Error saving photo to Drive: ' + errPhoto);
           }
-        } else if (p && p.url) {
-          photoUrls.push(p.url);
+        }
+        if (!savedPhotoUrl && p.url) {
+          savedPhotoUrl = p.url;
+        }
+        if (savedPhotoUrl) {
+          photoUrls.push(savedPhotoUrl);
         }
       }
 
-      // บันทึกเกียรติบัตร
+      // 2) บันทึกเกียรติบัตร / วุฒิบัตร ลงในโฟลเดอร์ "เกียรติบัตร"
       var certs = data.certificates || [];
       if (typeof certs === 'string') {
         try { certs = JSON.parse(certs); } catch(ce) {}
       }
       for (var k = 0; k < certs.length; k++) {
         var c = certs[k];
-        if (c && c.base64) {
+        if (!c) continue;
+        var cB64 = c.base64 || c.fileBase64 || '';
+        if (!cB64 && c.url && c.url.indexOf('base64,') !== -1) {
+          cB64 = c.url.split('base64,')[1];
+        }
+        var savedCertUrl = '';
+        if (cB64) {
           try {
-            var decodedCert = Utilities.base64Decode(c.base64);
+            var decodedCert = Utilities.base64Decode(cB64);
             var mimeCert = c.type || ((c.name && c.name.endsWith('.pdf')) ? 'application/pdf' : 'image/jpeg');
             var certName = id + '_เกียรติบัตร_' + (k + 1) + '_' + (c.name || 'cert');
             var certBlob = Utilities.newBlob(decodedCert, mimeCert, certName);
-            var certFile = uploaderFolder.createFile(certBlob);
-            certFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            var certFile = certsSubfolder.createFile(certBlob);
             var cId = certFile.getId();
-            var certUrl = (mimeCert.indexOf('image') !== -1)
+            savedCertUrl = (mimeCert.indexOf('image') !== -1)
               ? ('https://drive.google.com/thumbnail?id=' + cId + '&sz=w1200')
               : certFile.getUrl();
-            certUrls.push(certUrl);
+            try {
+              certFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            } catch(shareCertErr) {
+              console.warn('Certificate sharing skipped: ' + shareCertErr);
+            }
           } catch(errCert) {
             console.error('Error saving certificate: ' + errCert);
           }
-        } else if (c && c.url) {
-          certUrls.push(c.url);
+        }
+        if (!savedCertUrl && c.url) {
+          savedCertUrl = c.url;
+        }
+        if (savedCertUrl) {
+          certUrls.push(savedCertUrl);
         }
       }
 
-      // บันทึกเอกสารเพิ่มเติม (PDF)
+      // 3) บันทึกเอกสารเพิ่มเติม (.PDF) ลงในโฟลเดอร์ "ไฟล์เอกสาร"
       var docs = data.documents || [];
       if (typeof docs === 'string') {
         try { docs = JSON.parse(docs); } catch(de) {}
       }
       for (var j = 0; j < docs.length; j++) {
         var d = docs[j];
-        if (d && d.base64) {
+        if (!d) continue;
+        var dB64 = d.base64 || d.fileBase64 || '';
+        if (!dB64 && d.url && d.url.indexOf('base64,') !== -1) {
+          dB64 = d.url.split('base64,')[1];
+        }
+        if (dB64) {
           try {
-            var decodedDoc = Utilities.base64Decode(d.base64);
+            var decodedDoc = Utilities.base64Decode(dB64);
             var mimeDoc = d.type || 'application/pdf';
             var docName = id + '_เอกสาร_' + (j + 1) + '_' + (d.name || 'doc.pdf');
             var docBlob = Utilities.newBlob(decodedDoc, mimeDoc, docName);
-            var docFile = uploaderFolder.createFile(docBlob);
-            docFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            var docFile = docsSubfolder.createFile(docBlob);
+            try {
+              docFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            } catch(shareDocErr) {
+              console.warn('Document sharing skipped: ' + shareDocErr);
+            }
             docUrls.push(docFile.getUrl());
           } catch(errDoc) {
             console.error('Error saving document: ' + errDoc);

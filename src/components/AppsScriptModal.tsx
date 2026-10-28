@@ -34,11 +34,11 @@ export const AppsScriptModal: React.FC<AppsScriptModalProps> = ({
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <span>โค้ด Google Apps Script (Code.gs)</span>
                 <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-md font-mono">
-                  v2568 (แยกโฟลเดอร์กลุ่มสาระ &amp; ครู)
+                  v2568 (โครงสร้าง 4 ระดับใน Activities)
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                สคริปต์เชื่อมต่อ Google Sheets &amp; Drive (สร้างโฟลเดอร์กลุ่มสาระ ➔ โฟลเดอร์ผู้อัปโหลด และส่งข้อมูลสด)
+                Activities ➔ 1.กลุ่มสาระ ➔ 2.ชื่อครู ➔ 3.ผลงาน (รูปกิจกรรม, เกียรติบัตร, ไฟล์เอกสาร) และใช้อันเดิมไม่สร้างซ้ำซ้อน
               </p>
             </div>
           </div>

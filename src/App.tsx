@@ -89,6 +89,18 @@ export default function App() {
     }
   };
 
+  // Handle updating an existing record (e.g. attaching photos to existing records)
+  const handleUpdateRecord = (updatedRecord: ActivityRecord) => {
+    setRecords((prev) => {
+      const updated = prev.map((r) => (r.id === updatedRecord.id ? updatedRecord : r));
+      saveAllActivities(updated);
+      return updated;
+    });
+    if (selectedRecord && selectedRecord.id === updatedRecord.id) {
+      setSelectedRecord(updatedRecord);
+    }
+  };
+
   // Sync state changes with localStorage
   const handleAddSuccess = (newRecord: ActivityRecord) => {
     setRecords((prev) => {
@@ -177,6 +189,7 @@ export default function App() {
               onRefresh={handleRefreshRecords}
               onOpenAddModal={() => setCurrentTab('add')}
               onSelectRecord={(rec) => setSelectedRecord(rec)}
+              onUpdateRecord={handleUpdateRecord}
               initialFilterLevel={listFilterLevel}
             />
           )}
@@ -234,6 +247,7 @@ export default function App() {
       <ActivityDetailModal
         record={selectedRecord}
         onClose={() => setSelectedRecord(null)}
+        onUpdateRecord={handleUpdateRecord}
       />
 
       {/* Google Apps Script Modal */}

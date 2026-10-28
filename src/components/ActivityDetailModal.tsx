@@ -21,23 +21,94 @@ import {
 } from 'lucide-react';
 import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
+import {
+  compressImageFile,
+  fileToBase64,
+  submitActivityToAppsScript,
+  saveRecordToLocalStorage,
+  APPS_SCRIPT_CONFIG,
+} from '../services/appsScriptService';
 
 interface ActivityDetailModalProps {
   record: ActivityRecord | null;
   onClose: () => void;
+  onUpdateRecord?: (record: ActivityRecord) => void;
 }
 
 export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
   record,
   onClose,
+  onUpdateRecord,
 }) => {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   if (!record) return null;
 
   const photos = record.photos || [];
   const certificates = record.certificates || [];
   const documents = record.documents || [];
+
+  const handleAddPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !record) return;
+    const file = e.target.files[0];
+    setIsUploadingPhoto(true);
+    try {
+      const base64 = await compressImageFile(file);
+      const dataUrl = `data:image/jpeg;base64,${base64}`;
+      const newPhoto = {
+        name: file.name,
+        type: 'image/jpeg',
+        size: file.size,
+        base64: base64,
+        url: dataUrl,
+      };
+      const updatedPhotos = [...(record.photos || []), newPhoto].slice(0, 3);
+      const updatedRecord: ActivityRecord = {
+        ...record,
+        photos: updatedPhotos,
+      };
+      onUpdateRecord?.(updatedRecord);
+      saveRecordToLocalStorage(updatedRecord);
+      submitActivityToAppsScript(updatedRecord);
+      setActivePhotoIdx(updatedPhotos.length - 1);
+    } catch (err) {
+      console.error('Add photo in modal error:', err);
+    } finally {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAddCertificate = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !record) return;
+    const file = e.target.files[0];
+    setIsUploadingPhoto(true);
+    try {
+      const isImg = file.type.startsWith('image/');
+      const base64 = isImg ? await compressImageFile(file) : await fileToBase64(file);
+      const dataUrl = isImg ? `data:image/jpeg;base64,${base64}` : undefined;
+      const newCert = {
+        name: file.name,
+        type: isImg ? 'image/jpeg' : (file.type || 'application/pdf'),
+        size: file.size,
+        base64: base64,
+        url: dataUrl,
+      };
+      const updatedRecord: ActivityRecord = {
+        ...record,
+        certificates: [...(record.certificates || []), newCert],
+      };
+      onUpdateRecord?.(updatedRecord);
+      saveRecordToLocalStorage(updatedRecord);
+      submitActivityToAppsScript(updatedRecord);
+    } catch (err) {
+      console.error('Add certificate in modal error:', err);
+    } finally {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
 
   const getBadgeStyle = (level: AwardLevel) => {
     switch (level) {
@@ -94,24 +165,39 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Photo Showcase Gallery */}
-          {photos.length > 0 && (
+          {/* Photo / Certificate Showcase Gallery or Upload Prompt */}
+          {photos.length > 0 ? (
             <div className="space-y-3">
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-                <ImageIcon className="w-4 h-4 text-pink-500" />
-                <span>ภาพถ่ายกิจกรรม ({photos.length} รูป)</span>
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4 text-pink-500" />
+                  <span>ภาพถ่ายกิจกรรม ({photos.length} รูป)</span>
+                </h3>
+                {photos.length < 3 && (
+                  <label className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>{isUploadingPhoto ? 'กำลังอัปโหลด...' : '+ เพิ่มรูปถ่าย'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isUploadingPhoto}
+                      onChange={handleAddPhoto}
+                    />
+                  </label>
+                )}
+              </div>
 
               <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center group">
                 <ActivityImage
                   src={
-                    photos[activePhotoIdx].url ||
-                    (photos[activePhotoIdx].base64
+                    photos[activePhotoIdx]?.url ||
+                    (photos[activePhotoIdx]?.base64
                       ? `data:${photos[activePhotoIdx].type};base64,${photos[activePhotoIdx].base64}`
                       : '')
                   }
-                  originalUrl={photos[activePhotoIdx].originalUrl}
-                  alt={photos[activePhotoIdx].name}
+                  originalUrl={photos[activePhotoIdx]?.originalUrl}
+                  alt={photos[activePhotoIdx]?.name || record.awardName}
                   className="w-full h-full object-contain"
                   containerClassName="w-full h-full flex items-center justify-center bg-slate-950"
                   showOpenButton={true}
@@ -144,7 +230,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                 )}
 
                 <span className="absolute bottom-2 left-3 bg-black/70 text-white text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none">
-                  {photos[activePhotoIdx].name} ({activePhotoIdx + 1}/{photos.length})
+                  {photos[activePhotoIdx]?.name || 'ภาพกิจกรรม'} ({activePhotoIdx + 1}/{photos.length})
                 </span>
               </div>
 
@@ -173,6 +259,85 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                   ))}
                 </div>
               )}
+            </div>
+          ) : certificates.length > 0 && (certificates[0].url || certificates[0].base64) ? (
+            /* Second priority: Display Certificate showcase when no photos are attached */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <Award className="w-4 h-4 text-amber-500" />
+                  <span>ตัวอย่างผลงาน: เกียรติบัตร / วุฒิบัตร ({certificates.length} รายการ)</span>
+                </h3>
+                <label className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>{isUploadingPhoto ? 'กำลังบันทึก...' : '+ เพิ่มภาพถ่ายกิจกรรม'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploadingPhoto}
+                    onChange={handleAddPhoto}
+                  />
+                </label>
+              </div>
+
+              <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center group border border-amber-300">
+                <ActivityImage
+                  src={
+                    certificates[0].url ||
+                    (certificates[0].base64
+                      ? `data:${certificates[0].type};base64,${certificates[0].base64}`
+                      : '')
+                  }
+                  originalUrl={certificates[0].originalUrl}
+                  alt={certificates[0].name}
+                  className="w-full h-full object-contain"
+                  containerClassName="w-full h-full flex items-center justify-center bg-slate-900"
+                  showOpenButton={true}
+                  fallbackTitle="เกียรติบัตร / วุฒิบัตร"
+                />
+                <span className="absolute bottom-2 left-3 bg-amber-900/80 text-amber-100 text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none">
+                  {certificates[0].name} (เกียรติบัตร)
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Upload area when record currently has no photos or certificates */
+            <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center">
+                <ImageIcon className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800">ยังไม่มีภาพถ่ายกิจกรรมหรือเกียรติบัตรสำหรับผลงานนี้</h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  ท่านสามารถแนบภาพถ่ายกิจกรรม (1-3 รูป) หรือไฟล์เกียรติบัตร เพื่อแสดงตัวอย่างบนการ์ดผลงานและบันทึกลงระบบได้ทันที
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-1">
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-colors">
+                  <ImageIcon className="w-4 h-4" />
+                  <span>{isUploadingPhoto ? 'กำลังบันทึกภาพ...' : '+ แนบภาพถ่ายกิจกรรม'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isUploadingPhoto}
+                    onChange={handleAddPhoto}
+                  />
+                </label>
+
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-colors">
+                  <Award className="w-4 h-4" />
+                  <span>{isUploadingPhoto ? 'กำลังบันทึก...' : '+ แนบเกียรติบัตร'}</span>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    disabled={isUploadingPhoto}
+                    onChange={handleAddCertificate}
+                  />
+                </label>
+              </div>
             </div>
           )}
 
@@ -355,27 +520,33 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
           )}
 
           {/* Google Drive Folder link for this submission */}
-          {record.folderUrl && (
-            <div className="pt-2 border-t border-slate-100">
-              <a
-                href={record.folderUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between p-3 rounded-lg bg-amber-50 hover:bg-amber-100/90 border border-amber-200 text-xs text-amber-900 transition-colors"
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <Folder className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="font-semibold truncate">
-                    เปิดโฟลเดอร์ Google Drive ({record.department} ➔ {record.teacherName || 'ผู้รายงาน'})
+          <div className="pt-2 border-t border-slate-100">
+            <a
+              href={
+                record.folderUrl ||
+                `https://drive.google.com/drive/folders/${APPS_SCRIPT_CONFIG.FOLDER_ID}`
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between p-3.5 rounded-xl bg-amber-50 hover:bg-amber-100/90 border border-amber-200 text-xs text-amber-900 transition-colors shadow-2xs"
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <Folder className="w-5 h-5 text-amber-600 shrink-0" />
+                <div className="truncate text-left">
+                  <span className="font-bold text-slate-900 block truncate">
+                    เปิดโฟลเดอร์ Google Drive (Activities)
+                  </span>
+                  <span className="text-[11px] text-amber-800 font-mono block truncate">
+                    1. {record.department} ➔ 2. {record.teacherName || 'ผู้รายงาน'} ➔ 3. {record.awardName || record.id} (รูปกิจกรรม, เกียรติบัตร, ไฟล์เอกสาร)
                   </span>
                 </div>
-                <div className="flex items-center gap-1 font-bold text-amber-700 shrink-0">
-                  <span>เปิดโฟลเดอร์</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </div>
-              </a>
-            </div>
-          )}
+              </div>
+              <div className="flex items-center gap-1 font-bold text-amber-700 bg-white border border-amber-300 px-3 py-1.5 rounded-lg text-xs shrink-0 shadow-xs hover:bg-amber-50">
+                <span>เปิด Drive</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </div>
+            </a>
+          </div>
         </div>
 
         {/* Footer actions */}
