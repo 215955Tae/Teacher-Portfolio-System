@@ -15,6 +15,7 @@ import {
   Share2,
   Award,
 } from 'lucide-react';
+import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
 
 interface ActivityListProps {
@@ -206,14 +207,16 @@ export const ActivityList: React.FC<ActivityListProps> = ({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {processedRecords.map((item) => {
-            const firstPhotoUrl =
-              item.photos && item.photos.length > 0
-                ? item.photos[0].url ||
-                  (item.photos[0].base64
-                    ? `data:${item.photos[0].type};base64,${item.photos[0].base64}`
-                    : '')
-                : '';
+            const firstPhoto = item.photos && item.photos.length > 0 ? item.photos[0] : null;
+            const firstCert = item.certificates && item.certificates.length > 0 ? item.certificates[0] : null;
 
+            const photoUrl = firstPhoto
+              ? firstPhoto.url || (firstPhoto.base64 ? `data:${firstPhoto.type};base64,${firstPhoto.base64}` : '')
+              : firstCert && firstCert.type?.startsWith('image/')
+              ? firstCert.url || (firstCert.base64 ? `data:${firstCert.type};base64,${firstCert.base64}` : '')
+              : '';
+
+            const origUrl = firstPhoto?.originalUrl || firstCert?.originalUrl;
             const recipient = item.teacherName || item.studentName || '-';
 
             return (
@@ -222,22 +225,18 @@ export const ActivityList: React.FC<ActivityListProps> = ({
                 className="group bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden flex flex-col justify-between hover:shadow-xl transition-all duration-200 hover:-translate-y-1"
               >
                 {/* Top Section: รูปภาพด้านบน (thumbnail) พร้อมป้ายบอกระดับ */}
-                <div className="relative h-48 bg-slate-100 overflow-hidden">
-                  {firstPhotoUrl ? (
-                    <img
-                      src={firstPhotoUrl}
-                      alt={item.awardName}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-200 text-slate-400 p-4">
-                      <Trophy className="w-12 h-12 text-slate-300 mb-2" />
-                      <span className="text-xs text-slate-400 font-medium">
-                        โรงเรียนพังโคนวิทยาคม
-                      </span>
-                    </div>
-                  )}
+                <div
+                  className="relative h-48 bg-slate-100 overflow-hidden cursor-pointer"
+                  onClick={() => onSelectRecord(item)}
+                >
+                  <ActivityImage
+                    src={photoUrl}
+                    originalUrl={origUrl}
+                    alt={item.awardName}
+                    containerClassName="w-full h-full"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    fallbackTitle="โรงเรียนพังโคนวิทยาคม"
+                  />
 
                   {/* ป้ายบอกระดับ (เช่น "ระดับชาติ" หรือ "ระดับเขตพื้นที่" พร้อมสีพื้นหลังต่างกัน) */}
                   <div className="absolute top-3 left-3">

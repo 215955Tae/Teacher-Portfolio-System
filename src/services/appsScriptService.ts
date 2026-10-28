@@ -78,9 +78,610 @@ export interface UploadProgressStatus {
 }
 
 /**
+ * Helper to extract Google Drive file ID from any URL format or raw ID string.
+ */
+export function extractDriveFileId(url: string | undefined): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+
+  // If already base64 or blob, no drive ID
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return '';
+
+  // Match /file/d/ID/view, /file/d/ID, ?id=ID, /d/ID, thumbnail?id=ID
+  const driveRegex = /(?:file\/d\/|[?&]id=|\/d\/|thumbnail\?id=)([a-zA-Z0-9_-]{20,})/;
+  const match = trimmed.match(driveRegex);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  // Bare Drive ID (e.g. 25+ alphanumeric characters)
+  if (/^[a-zA-Z0-9_-]{25,}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return '';
+}
+
+/**
+ * Format any Drive link or ID into Google's high-speed CDN direct image URL:
+ * https://lh3.googleusercontent.com/d/${fileId}=w1000
+ * This avoids Google Drive iframe blocks, cookies issues, and renders instantly in <img> tags.
+ */
+export function formatDriveImageUrl(url: string | undefined): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+
+  if (trimmed.startsWith('data:image') || trimmed.startsWith('blob:')) {
+    return trimmed;
+  }
+
+  if (trimmed.includes('/folders/')) {
+    return '';
+  }
+
+  const fileId = extractDriveFileId(trimmed);
+  if (fileId) {
+    return `https://lh3.googleusercontent.com/d/${fileId}=w1000`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Alternative Google Drive thumbnail URL for fallback
+ */
+export function getAlternateDriveImageUrl(url: string | undefined): string {
+  if (!url) return '';
+  const fileId = extractDriveFileId(url);
+  if (fileId) {
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+  }
+  return '';
+}
+
+/**
+ * Get direct Google Drive viewer link for opening the original file in a new tab
+ */
+export function getGoogleDriveViewUrl(url: string | undefined): string {
+  if (!url) return '';
+  const fileId = extractDriveFileId(url);
+  if (fileId) {
+    return `https://drive.google.com/file/d/${fileId}/view`;
+  }
+  if (url.startsWith('http')) return url;
+  return '';
+}
+
+/**
+ * Format any date string (including GViz "Date(2026,9,27)") into clean Thai Buddhist date
+ */
+export function formatDisplayDate(dateStr: string | undefined): string {
+  if (!dateStr) return '-';
+  const trimmed = dateStr.trim();
+
+  const THAI_MONTHS = [
+    '',
+    'ม.ค.',
+    'ก.พ.',
+    'มี.ค.',
+    'เม.ย.',
+    'พ.ค.',
+    'มิ.ย.',
+    'ก.ค.',
+    'ส.ค.',
+    'ก.ย.',
+    'ต.ค.',
+    'พ.ย.',
+    'ธ.ค.',
+  ];
+
+  // GViz format: Date(year, monthIndex, day[, hour, minute, second])
+  const gvizMatch = trimmed.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
+  if (gvizMatch) {
+    const year = parseInt(gvizMatch[1], 10);
+    const month = parseInt(gvizMatch[2], 10) + 1; // 0-indexed in GViz
+    const day = parseInt(gvizMatch[3], 10);
+    const thaiYear = year < 2500 ? year + 543 : year;
+    return `${day} ${THAI_MONTHS[month] || month} ${thaiYear}`;
+  }
+
+  // Standard ISO format: YYYY-MM-DD
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const month = parseInt(isoMatch[2], 10);
+    const day = parseInt(isoMatch[3], 10);
+    const thaiYear = year < 2500 ? year + 543 : year;
+    return `${day} ${THAI_MONTHS[month] || month} ${thaiYear}`;
+  }
+
+  return trimmed;
+}
+
+const LOCAL_STORAGE_KEY = 'PKW_ACTIVITIES_2568_SHEET_V3';
+
+/**
+ * Filter out any mock/demo data from previous versions or deleted test items.
+ */
+function filterOutDemoRecords(records: ActivityRecord[]): ActivityRecord[] {
+  if (!Array.isArray(records)) return [];
+  const demoIds = new Set(['PKW-2568-001', 'PKW-2568-002', 'PKW-2568-003', 'PKW-2568-9600']);
+  return records.filter((r) => {
+    if (!r || !r.id) return false;
+    if (demoIds.has(r.id)) return false;
+    // Check if test dummy record with awardName "5" and teacherName "5"
+    if (r.awardName === '5' && (r.teacherName === '5' || r.organizer === '5')) return false;
+    const hasUnsplash = r.photos?.some((p) => p.url?.includes('images.unsplash.com'));
+    if (hasUnsplash && r.id.startsWith('PKW-2568-00')) return false;
+    return true;
+  });
+}
+
+export function loadStoredActivities(defaultRecords: ActivityRecord[] = []): ActivityRecord[] {
+  try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return filterOutDemoRecords(defaultRecords);
+    }
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return filterOutDemoRecords(Array.isArray(parsed) ? parsed : []);
+  } catch (e) {
+    console.error('Failed to load activities from storage', e);
+    return [];
+  }
+}
+
+export function saveAllActivities(records: ActivityRecord[]) {
+  try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const cleaned = filterOutDemoRecords(records);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleaned));
+  } catch (e) {
+    console.error('Failed to save activities to storage', e);
+  }
+}
+
+export function clearActivitiesStorage() {
+  try {
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
+  } catch (e) {}
+}
+
+export function saveRecordToLocalStorage(record: ActivityRecord) {
+  try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    let list: ActivityRecord[] = raw ? filterOutDemoRecords(JSON.parse(raw)) : [];
+    const index = list.findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      list[index] = record;
+    } else {
+      list.unshift(record);
+    }
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Failed to update local record', e);
+  }
+}
+
+/**
+ * Standard RFC-compliant CSV parser:
+ * Parses CSV lines handling quoted cells, embedded commas, and newlines.
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let insideQuote = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i + 1];
+
+    if (insideQuote) {
+      if (c === '"' && next === '"') {
+        currentCell += '"';
+        i++;
+      } else if (c === '"') {
+        insideQuote = false;
+      } else {
+        currentCell += c;
+      }
+    } else {
+      if (c === '"') {
+        insideQuote = true;
+      } else if (c === ',') {
+        currentRow.push(currentCell.trim());
+        currentCell = '';
+      } else if (c === '\r' && next === '\n') {
+        currentRow.push(currentCell.trim());
+        rows.push(currentRow);
+        currentRow = [];
+        currentCell = '';
+        i++;
+      } else if (c === '\n' || c === '\r') {
+        currentRow.push(currentCell.trim());
+        rows.push(currentRow);
+        currentRow = [];
+        currentCell = '';
+      } else {
+        currentCell += c;
+      }
+    }
+  }
+  if (currentCell.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    rows.push(currentRow);
+  }
+  return rows.filter((r) => r.length > 0 && r.some((cell) => cell.length > 0));
+}
+
+/**
+ * Helper to extract URLs from text (handles newlines, commas, JSON strings)
+ */
+function extractUrlsFromText(text: string): string[] {
+  if (!text) return [];
+  const trimmed = text.trim();
+
+  // Try JSON array
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map(String).filter((u) => u.startsWith('http') || u.length > 25);
+      }
+    } catch (e) {}
+  }
+
+  // Regex for http links
+  const matches = trimmed.match(/https?:\/\/[^\s"'<>\),]+/g);
+  if (matches && matches.length > 0) return matches;
+
+  return trimmed
+    .split(/\r?\n|,/)
+    .map((s) => s.trim())
+    .filter((u) => u.startsWith('http') || u.length > 25);
+}
+
+/**
+ * Universal Matrix-to-ActivityRecords Parser:
+ * Dynamically maps rows according to header names discovered in row 0.
+ * Supports both Tab 1 (with JSON evidence column) and Tab 2 (with separate photo/cert/doc columns).
+ */
+function parseActivityRecordsFromMatrix(headers: string[], dataRows: string[][]): ActivityRecord[] {
+  if (!headers || headers.length === 0 || !dataRows || dataRows.length === 0) {
+    return [];
+  }
+
+  const findIdx = (keywords: string[]): number => {
+    return headers.findIndex((h) => {
+      const clean = (h || '').toLowerCase().replace(/[\s\-_/()]/g, '');
+      return keywords.some((kw) => {
+        const kwClean = kw.toLowerCase().replace(/[\s\-_/()]/g, '');
+        return clean.includes(kwClean) || kwClean.includes(clean);
+      });
+    });
+  };
+
+  const idCol = findIdx(['รหัสกิจกรรม', 'id']);
+  const timeCol = findIdx(['วันเวลาที่บันทึก', 'timestamp', 'เวลา']);
+  const yearCol = findIdx(['ปีการศึกษา', 'year']);
+  const levelCol = findIdx(['ระดับรางวัล', 'ระดับ', 'level']);
+  const deptCol = findIdx(['กลุ่มสาระการเรียนรู้', 'กลุ่มสาระ', 'department']);
+  const nameCol = findIdx(['ชื่อรางวัล/กิจกรรม', 'ชื่อรางวัล', 'ชื่อกิจกรรม', 'awardname', 'name']);
+  const dateCol = findIdx(['วันที่ได้รับรางวัล', 'วันที่', 'date']);
+  const orgCol = findIdx(['หน่วยงานที่จัด', 'หน่วยงาน', 'organizer']);
+  const teacherCol = findIdx(['ครูผู้รับรางวัล', 'ครู', 'ผู้รายงาน', 'teacher']);
+  const studentCol = findIdx(['นักเรียนผู้รับรางวัล', 'นักเรียน', 'student']);
+  const objCol = findIdx(['วัตถุประสงค์', 'objective']);
+  const detailsCol = findIdx(['รายละเอียดเพิ่มเติม', 'รายละเอียด', 'detail']);
+  const outcomesCol = findIdx(['ผลลัพธ์ที่เกิด', 'ผลลัพธ์', 'outcome']);
+  const photosCol = findIdx(['ลิงก์ภาพถ่ายกิจกรรม', 'ภาพถ่าย', 'รูปภาพ', 'photo', 'picture', 'image']);
+  const certsCol = findIdx(['ลิงก์เกียรติบัตร', 'เกียรติบัตร', 'cert', 'certificate']);
+  const docsCol = findIdx(['ลิงก์เอกสารหลักฐานเพิ่มเติม', 'เอกสาร', 'doc', 'document', 'pdf']);
+  const folderCol = findIdx(['โฟลเดอร์ผู้อัปโหลดใน Drive', 'โฟลเดอร์', 'folder', 'drive']);
+  const evidenceJsonCol = findIdx(['ไฟล์หลักฐาน(json)', 'evidence', 'ไฟล์หลักฐาน']);
+
+  const records: ActivityRecord[] = [];
+
+  for (let r = 0; r < dataRows.length; r++) {
+    const row = dataRows[r];
+    if (!row || row.length === 0) continue;
+
+    const getVal = (idx: number, fallback = ''): string => {
+      if (idx >= 0 && idx < row.length && row[idx] !== undefined && row[idx] !== null) {
+        return String(row[idx]).trim();
+      }
+      return fallback;
+    };
+
+    const awardName = nameCol >= 0 ? getVal(nameCol) : getVal(5, getVal(4));
+    const rawId = idCol >= 0 ? getVal(idCol) : getVal(0);
+
+    // Skip if empty or repeated header
+    if (!awardName || awardName === 'ชื่อรางวัล' || awardName === 'ชื่อรางวัล/กิจกรรม' || rawId === 'id' || rawId === 'รหัสกิจกรรม') {
+      continue;
+    }
+
+    const id = rawId || `PKW-${Date.now()}-${r}`;
+    const academicYear = yearCol >= 0 ? getVal(yearCol, '2568') : '2568';
+    const awardLevel = (levelCol >= 0 ? getVal(levelCol, 'ระดับเขตพื้นที่') : 'ระดับเขตพื้นที่') as any;
+    const department = (deptCol >= 0 ? getVal(deptCol, 'กลุ่มบริหารงานบุคคล') : 'กลุ่มบริหารงานบุคคล') as any;
+    const rawDate = dateCol >= 0 ? getVal(dateCol) : '';
+    const awardDate = formatDisplayDate(rawDate);
+    const organizer = orgCol >= 0 ? getVal(orgCol, 'โรงเรียนพังโคนวิทยาคม') : 'โรงเรียนพังโคนวิทยาคม';
+    const teacherName = teacherCol >= 0 ? getVal(teacherCol, '-') : '-';
+    const studentName = studentCol >= 0 ? getVal(studentCol, '-') : '-';
+    const objective = objCol >= 0 ? getVal(objCol) : '';
+    const additionalDetails = detailsCol >= 0 ? getVal(detailsCol) : '';
+    const outcomes = outcomesCol >= 0 ? getVal(outcomesCol) : '';
+    let folderUrl = folderCol >= 0 ? getVal(folderCol) : '';
+
+    let photoUrls: string[] = [];
+    let certUrls: string[] = [];
+    let docUrls: string[] = [];
+
+    // Check JSON evidence column if available (Format 1)
+    if (evidenceJsonCol >= 0) {
+      const rawEvidence = getVal(evidenceJsonCol);
+      if (rawEvidence && rawEvidence.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(rawEvidence);
+          if (Array.isArray(parsed.photos)) photoUrls.push(...parsed.photos);
+          if (Array.isArray(parsed.certificates)) certUrls.push(...parsed.certificates);
+          if (Array.isArray(parsed.documents)) docUrls.push(...parsed.documents);
+          if (!folderUrl && parsed.folderUrl) folderUrl = parsed.folderUrl;
+        } catch (e) {}
+      }
+    }
+
+    // Check separate columns (Format 2)
+    if (photosCol >= 0) {
+      const rawP = getVal(photosCol);
+      if (rawP) photoUrls.push(...extractUrlsFromText(rawP));
+    }
+    if (certsCol >= 0) {
+      const rawC = getVal(certsCol);
+      if (rawC) certUrls.push(...extractUrlsFromText(rawC));
+    }
+    if (docsCol >= 0) {
+      const rawD = getVal(docsCol);
+      if (rawD) docUrls.push(...extractUrlsFromText(rawD));
+    }
+
+    // Unique URLs
+    const uniquePhotos = Array.from(new Set(photoUrls.filter(Boolean)));
+    const uniqueCerts = Array.from(new Set(certUrls.filter(Boolean)));
+    const uniqueDocs = Array.from(new Set(docUrls.filter(Boolean)));
+
+    records.push({
+      id,
+      academicYear,
+      awardLevel,
+      department,
+      awardName,
+      awardDate,
+      organizer,
+      teacherName,
+      studentName,
+      objective,
+      additionalDetails,
+      outcomes,
+      folderUrl,
+      photos: uniquePhotos.map((url, i) => ({
+        name: `ภาพถ่าย_${i + 1}`,
+        type: 'image/jpeg',
+        size: 0,
+        url: formatDriveImageUrl(url),
+        originalUrl: getGoogleDriveViewUrl(url),
+      })),
+      certificates: uniqueCerts.map((url, i) => ({
+        name: `เกียรติบัตร_${i + 1}`,
+        type: url.includes('.pdf') ? 'application/pdf' : 'image/jpeg',
+        size: 0,
+        url: formatDriveImageUrl(url),
+        originalUrl: getGoogleDriveViewUrl(url),
+      })),
+      documents: uniqueDocs.map((url, i) => ({
+        name: `เอกสาร_${i + 1}`,
+        type: 'application/pdf',
+        size: 0,
+        url: url,
+        originalUrl: getGoogleDriveViewUrl(url),
+      })),
+      createdAt: timeCol >= 0 && getVal(timeCol) ? getVal(timeCol) : new Date().toISOString(),
+      syncStatus: 'synced',
+    });
+  }
+
+  return filterOutDemoRecords(records).reverse();
+}
+
+/**
+ * Parse Google Sheet Visualization API table into ActivityRecords
+ * Automatically handles cases where cols have empty labels by checking row 0!
+ */
+function parseGvizTable(table: any): ActivityRecord[] {
+  if (!table || !Array.isArray(table.rows) || table.rows.length === 0) {
+    return [];
+  }
+
+  // Determine headers: check cols first, then row 0 if labels are empty
+  let headers: string[] = (table.cols || []).map((c: any) => c.label || c.id || '');
+  const hasLabels = headers.some((h) => h && h.length > 1 && !/^[A-Z]$/.test(h));
+
+  let startRowIndex = 0;
+  if (!hasLabels && table.rows.length > 0) {
+    // Row 0 contains the real column headers!
+    headers = (table.rows[0].c || []).map((cell: any) => (cell ? String(cell.v || cell.f || '') : ''));
+    startRowIndex = 1;
+  }
+
+  const dataRows: string[][] = [];
+  for (let r = startRowIndex; r < table.rows.length; r++) {
+    const row = table.rows[r];
+    if (!row || !row.c) continue;
+    const rowValues = row.c.map((cell: any) => {
+      if (!cell) return '';
+      if (cell.v !== null && cell.v !== undefined) {
+        const vStr = String(cell.v).trim();
+        if (vStr.startsWith('Date(') && cell.f) {
+          return String(cell.f).trim();
+        }
+        return vStr;
+      }
+      return cell.f ? String(cell.f).trim() : '';
+    });
+    dataRows.push(rowValues);
+  }
+
+  return parseActivityRecordsFromMatrix(headers, dataRows);
+}
+
+/**
+ * Fetch real activity records directly from Google Sheet (REAL-TIME SINGLE SOURCE OF TRUTH).
+ * Multi-layer fallback:
+ * 1) Direct CSV query from tab "บันทึกผลงานกิจกรรม"
+ * 2) Direct CSV query from Sheet1
+ * 3) GViz JSON query from tab "บันทึกผลงานกิจกรรม"
+ * 4) GViz JSON query from Sheet1
+ * 5) Apps Script doGet API
+ */
+export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]> {
+  let sheetReached = false;
+  let records: ActivityRecord[] = [];
+
+  const tabNameEncoded = encodeURIComponent('บันทึกผลงานกิจกรรม');
+
+  // STRATEGY 1: CSV from "บันทึกผลงานกิจกรรม"
+  try {
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${tabNameEncoded}&t=${Date.now()}`;
+    const res = await fetch(csvUrl);
+    if (res.ok) {
+      const text = await res.text();
+      sheetReached = true;
+      const matrix = parseCsv(text);
+      if (matrix.length > 1) {
+        const parsed = parseActivityRecordsFromMatrix(matrix[0], matrix.slice(1));
+        if (parsed.length > 0) {
+          records = parsed;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('CSV tab fetch error:', err);
+  }
+
+  // STRATEGY 2: CSV from default Sheet1
+  if (records.length === 0) {
+    try {
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&t=${Date.now()}`;
+      const res = await fetch(csvUrl);
+      if (res.ok) {
+        const text = await res.text();
+        sheetReached = true;
+        const matrix = parseCsv(text);
+        if (matrix.length > 1) {
+          const parsed = parseActivityRecordsFromMatrix(matrix[0], matrix.slice(1));
+          if (parsed.length > 0) {
+            records = parsed;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('CSV default tab fetch error:', err);
+    }
+  }
+
+  // STRATEGY 3: GViz JSON from "บันทึกผลงานกิจกรรม"
+  if (records.length === 0) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${tabNameEncoded}&t=${Date.now()}`;
+      const res = await fetch(gvizUrl);
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
+        if (match && match[1]) {
+          sheetReached = true;
+          const json = JSON.parse(match[1]);
+          const parsed = parseGvizTable(json.table);
+          if (parsed.length > 0) {
+            records = parsed;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('GViz tab fetch error:', err);
+    }
+  }
+
+  // STRATEGY 4: GViz JSON from Sheet1
+  if (records.length === 0) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&t=${Date.now()}`;
+      const res = await fetch(gvizUrl);
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
+        if (match && match[1]) {
+          sheetReached = true;
+          const json = JSON.parse(match[1]);
+          const parsed = parseGvizTable(json.table);
+          if (parsed.length > 0) {
+            records = parsed;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('GViz default tab fetch error:', err);
+    }
+  }
+
+  // STRATEGY 5: Apps Script doGet API
+  if (records.length === 0) {
+    try {
+      const appsScriptUrl = `${APPS_SCRIPT_CONFIG.ENDPOINT_URL}?action=getActivities&sheetId=${APPS_SCRIPT_CONFIG.SHEET_ID}&t=${Date.now()}`;
+      const res = await fetch(appsScriptUrl);
+      if (res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.records)) {
+          sheetReached = true;
+          if (json.records.length > 0) {
+            records = filterOutDemoRecords(json.records).map((r: ActivityRecord) => ({
+              ...r,
+              photos: (r.photos || []).map((p) => ({
+                ...p,
+                url: formatDriveImageUrl(p.url),
+                originalUrl: getGoogleDriveViewUrl(p.url || p.originalUrl),
+              })),
+            }));
+          }
+        }
+      }
+    } catch (appsScriptErr) {
+      console.warn('Apps Script doGet failed:', appsScriptErr);
+    }
+  }
+
+  // REAL-TIME GUARANTEE:
+  // If the sheet was reached, Google Sheet IS the single source of truth.
+  // If the sheet has 0 rows, records = [] and local cache is cleared.
+  if (sheetReached) {
+    saveAllActivities(records);
+    return records;
+  }
+
+  // Offline fallback only when network completely unreachable
+  return loadStoredActivities([]);
+}
+
+/**
  * Send activity data and files to Google Apps Script.
- * Uses JSON body with Content-Type: text/plain to avoid browser CORS preflight blocking,
- * and passes the complete uncorrupted payload directly to e.postData.contents.
  */
 export async function submitActivityToAppsScript(
   record: ActivityRecord,
@@ -170,7 +771,6 @@ export async function submitActivityToAppsScript(
     const jsonString = JSON.stringify(payload);
 
     try {
-      // POST with text/plain to avoid CORS preflight, read in Apps Script via e.postData.contents
       const response = await fetch(APPS_SCRIPT_CONFIG.ENDPOINT_URL, {
         method: 'POST',
         headers: {
@@ -188,12 +788,10 @@ export async function submitActivityToAppsScript(
             if (result.certUrls) uploadedUrls.certificates = result.certUrls;
             if (result.docUrls) uploadedUrls.documents = result.docUrls;
           }
-        } catch (e) {
-          // JSON parsing of opaque redirect response
-        }
+        } catch (e) {}
       }
     } catch (networkErr) {
-      console.warn('Direct fetch response redirect note, sending no-cors execution fallback:', networkErr);
+      console.warn('Direct fetch redirect, fallback submission:', networkErr);
       try {
         await fetch(APPS_SCRIPT_CONFIG.ENDPOINT_URL, {
           method: 'POST',
@@ -208,13 +806,13 @@ export async function submitActivityToAppsScript(
       }
     }
 
-    // Update local record URLs if returned, or maintain previews
+    // Update local record URLs
     const updatedPhotos: FileAttachment[] = record.photos.map((p, idx) => {
       const returned = uploadedUrls.photos[idx];
       return {
         ...p,
         url: returned ? formatDriveImageUrl(returned) : (p.url || (p.base64 ? `data:${p.type};base64,${p.base64}` : '')),
-        originalUrl: returned || p.originalUrl,
+        originalUrl: returned ? getGoogleDriveViewUrl(returned) : p.originalUrl,
       };
     });
 
@@ -225,7 +823,7 @@ export async function submitActivityToAppsScript(
         url: returned
           ? formatDriveImageUrl(returned)
           : (c.url || (c.base64 ? (c.type.startsWith('image/') ? `data:${c.type};base64,${c.base64}` : '') : '')),
-        originalUrl: returned || c.originalUrl,
+        originalUrl: returned ? getGoogleDriveViewUrl(returned) : c.originalUrl,
       };
     });
 
@@ -234,7 +832,7 @@ export async function submitActivityToAppsScript(
       return {
         ...d,
         url: returned || d.url,
-        originalUrl: returned || d.originalUrl,
+        originalUrl: returned ? getGoogleDriveViewUrl(returned) : d.originalUrl,
       };
     });
 
@@ -247,7 +845,6 @@ export async function submitActivityToAppsScript(
       syncStatus: 'synced',
     };
 
-    // Save to localStorage
     saveRecordToLocalStorage(finalRecord);
 
     onProgress?.({
@@ -281,442 +878,6 @@ export async function submitActivityToAppsScript(
   }
 }
 
-/**
- * Helper: Convert any Google Drive URL, Drive ID, or image link
- * into a high-res direct image thumbnail URL that renders reliably in <img> tags.
- */
-export function formatDriveImageUrl(url: string | undefined): string {
-  if (!url) return '';
-  const trimmed = url.trim();
-
-  // If already base64 data URL or blob
-  if (trimmed.startsWith('data:image') || trimmed.startsWith('blob:')) {
-    return trimmed;
-  }
-
-  // If it's a folder link, it's not a direct photo
-  if (trimmed.includes('/folders/')) {
-    return '';
-  }
-
-  // Match Google Drive file ID:
-  // e.g. /file/d/FILE_ID/view, id=FILE_ID, /d/FILE_ID, /thumbnail?id=FILE_ID
-  const driveRegex = /(?:file\/d\/|[?&]id=|\/d\/|thumbnail\?id=)([a-zA-Z0-9_-]{20,})/;
-  const match = trimmed.match(driveRegex);
-  if (match && match[1]) {
-    const fileId = match[1];
-    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
-  }
-
-  // Bare Drive ID (e.g. alphanumeric 25+ characters)
-  if (/^[a-zA-Z0-9_-]{25,}$/.test(trimmed)) {
-    return `https://drive.google.com/thumbnail?id=${trimmed}&sz=w1200`;
-  }
-
-  return trimmed;
-}
-
-/**
- * Alternate Google CDN image link for fallback on <img> error
- */
-export function getAlternateDriveImageUrl(url: string | undefined): string {
-  if (!url) return '';
-  const driveRegex = /(?:file\/d\/|[?&]id=|\/d\/|thumbnail\?id=)([a-zA-Z0-9_-]{20,})/;
-  const match = url.match(driveRegex);
-  if (match && match[1]) {
-    return `https://lh3.googleusercontent.com/d/${match[1]}=w1200`;
-  }
-  return '';
-}
-
-/**
- * Format any date string (including GViz "Date(2026,9,27)") into clean Thai Buddhist date or readable date
- */
-export function formatDisplayDate(dateStr: string | undefined): string {
-  if (!dateStr) return '-';
-  const trimmed = dateStr.trim();
-
-  const THAI_MONTHS = [
-    '',
-    'ม.ค.',
-    'ก.พ.',
-    'มี.ค.',
-    'เม.ย.',
-    'พ.ค.',
-    'มิ.ย.',
-    'ก.ค.',
-    'ส.ค.',
-    'ก.ย.',
-    'ต.ค.',
-    'พ.ย.',
-    'ธ.ค.',
-  ];
-
-  // GViz format: Date(year, monthIndex, day[, hour, minute, second])
-  const gvizMatch = trimmed.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/);
-  if (gvizMatch) {
-    const year = parseInt(gvizMatch[1], 10);
-    const month = parseInt(gvizMatch[2], 10) + 1; // 0-indexed in GViz
-    const day = parseInt(gvizMatch[3], 10);
-    const thaiYear = year < 2500 ? year + 543 : year;
-    return `${day} ${THAI_MONTHS[month] || month} ${thaiYear}`;
-  }
-
-  // Standard ISO format: YYYY-MM-DD
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoMatch) {
-    const year = parseInt(isoMatch[1], 10);
-    const month = parseInt(isoMatch[2], 10);
-    const day = parseInt(isoMatch[3], 10);
-    const thaiYear = year < 2500 ? year + 543 : year;
-    return `${day} ${THAI_MONTHS[month] || month} ${thaiYear}`;
-  }
-
-  return trimmed;
-}
-
-const LOCAL_STORAGE_KEY = 'PKW_ACTIVITIES_2568_SHEET_V2';
-
-/**
- * Filter out any mock/demo data from previous versions or deleted test items.
- */
-function filterOutDemoRecords(records: ActivityRecord[]): ActivityRecord[] {
-  if (!Array.isArray(records)) return [];
-  const demoIds = new Set(['PKW-2568-001', 'PKW-2568-002', 'PKW-2568-003', 'PKW-2568-9600']);
-  return records.filter((r) => {
-    if (!r || !r.id) return false;
-    if (demoIds.has(r.id)) return false;
-    // Check if test dummy record with awardName "5" and teacherName "5"
-    if (r.awardName === '5' && (r.teacherName === '5' || r.organizer === '5')) return false;
-    const hasUnsplash = r.photos?.some((p) => p.url?.includes('images.unsplash.com'));
-    if (hasUnsplash && r.id.startsWith('PKW-2568-00')) return false;
-    return true;
-  });
-}
-
-export function loadStoredActivities(defaultRecords: ActivityRecord[] = []): ActivityRecord[] {
-  try {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
-      return filterOutDemoRecords(defaultRecords);
-    }
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    return filterOutDemoRecords(Array.isArray(parsed) ? parsed : []);
-  } catch (e) {
-    console.error('Failed to load activities from storage', e);
-    return [];
-  }
-}
-
-export function saveAllActivities(records: ActivityRecord[]) {
-  try {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-    const cleaned = filterOutDemoRecords(records);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleaned));
-  } catch (e) {
-    console.error('Failed to save activities to storage', e);
-  }
-}
-
-export function clearActivitiesStorage() {
-  try {
-    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-    }
-  } catch (e) {}
-}
-
-export function saveRecordToLocalStorage(record: ActivityRecord) {
-  try {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    let list: ActivityRecord[] = raw ? filterOutDemoRecords(JSON.parse(raw)) : [];
-    const index = list.findIndex((item) => item.id === record.id);
-    if (index >= 0) {
-      list[index] = record;
-    } else {
-      list.unshift(record);
-    }
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list));
-  } catch (e) {
-    console.error('Failed to update local record', e);
-  }
-}
-
-/**
- * Helper to parse Google Sheet Visualization API table into ActivityRecords
- */
-function parseGvizTable(table: any): ActivityRecord[] {
-  if (!table || !Array.isArray(table.rows) || table.rows.length === 0) {
-    return [];
-  }
-
-  const cols = table.cols || [];
-  const findColIndex = (keywords: string[]): number => {
-    return cols.findIndex((col: any) => {
-      const label = (col.label || '').toLowerCase();
-      const id = (col.id || '').toLowerCase();
-      return keywords.some((kw) => label.includes(kw.toLowerCase()) || id === kw.toLowerCase());
-    });
-  };
-
-  const idCol = findColIndex(['รหัสกิจกรรม', 'id']);
-  const yearCol = findColIndex(['ปีการศึกษา', 'year']);
-  const levelCol = findColIndex(['ระดับรางวัล', 'ระดับ', 'level']);
-  const deptCol = findColIndex(['กลุ่มสาระ', 'department']);
-  const nameCol = findColIndex(['ชื่อรางวัล', 'ชื่อกิจกรรม', 'awardname', 'name']);
-  const dateCol = findColIndex(['วันที่ได้รับรางวัล', 'วันที่', 'date']);
-  const orgCol = findColIndex(['หน่วยงานที่จัด', 'หน่วยงาน', 'organizer']);
-  const teacherCol = findColIndex(['ครูผู้รับรางวัล', 'ครู', 'teacher']);
-  const studentCol = findColIndex(['นักเรียนผู้รับรางวัล', 'นักเรียน', 'student']);
-  const objCol = findColIndex(['วัตถุประสงค์', 'objective']);
-  const detailsCol = findColIndex(['รายละเอียดเพิ่มเติม', 'รายละเอียด', 'detail']);
-  const outcomesCol = findColIndex(['ผลลัพธ์ที่เกิด', 'ผลลัพธ์', 'outcome']);
-  const folderCol = findColIndex(['โฟลเดอร์', 'folder']);
-  const photosCol = findColIndex(['ภาพถ่าย', 'รูปภาพ', 'photo']);
-  const certsCol = findColIndex(['เกียรติบัตร', 'cert']);
-  const docsCol = findColIndex(['เอกสาร', 'doc']);
-  const evidenceJsonCol = findColIndex(['ไฟล์หลักฐาน(json)', 'evidence']);
-  const timeCol = findColIndex(['วันเวลาที่บันทึก', 'timestamp', 'เวลา']);
-
-  const records: ActivityRecord[] = [];
-
-  // Helper to extract URLs from text (handles newlines, commas, JSON)
-  const extractUrls = (text: string): string[] => {
-    if (!text) return [];
-    if (text.startsWith('[') && text.endsWith(']')) {
-      try {
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) {
-          return parsed.map(String).filter((u) => u.startsWith('http'));
-        }
-      } catch (e) {}
-    }
-    const matches = text.match(/https?:\/\/[^\s"'<>\),]+/g);
-    if (matches) return matches;
-    return text.split(/\r?\n|,/).map((s) => s.trim()).filter((u) => u.startsWith('http'));
-  };
-
-  for (let r = 0; r < table.rows.length; r++) {
-    const row = table.rows[r];
-    if (!row || !row.c) continue;
-
-    const getVal = (idx: number): string => {
-      if (idx < 0 || idx >= row.c.length || !row.c[idx]) return '';
-      const cell = row.c[idx];
-      if (cell.v !== null && cell.v !== undefined) {
-        const vStr = String(cell.v).trim();
-        if (vStr.startsWith('Date(') && cell.f) {
-          return String(cell.f).trim();
-        }
-        return vStr;
-      }
-      return cell.f ? String(cell.f).trim() : '';
-    };
-
-    const awardName = nameCol >= 0 ? getVal(nameCol) : getVal(4);
-    const rawId = idCol >= 0 ? getVal(idCol) : '';
-    const rawYear = yearCol >= 0 ? getVal(yearCol) : '';
-    const rawLevel = levelCol >= 0 ? getVal(levelCol) : '';
-
-    // Skip empty rows and table header rows
-    const isHeaderRow =
-      awardName === 'ชื่อรางวัล' ||
-      awardName === 'ชื่อรางวัล/กิจกรรม' ||
-      awardName === 'กลุ่มสาระ' ||
-      awardName === 'ผลลัพธ์' ||
-      rawId.toLowerCase() === 'id' ||
-      rawYear === 'ปีการศึกษา' ||
-      rawLevel === 'ระดับ' ||
-      rawLevel === 'ระดับรางวัล';
-
-    if (!awardName || isHeaderRow) {
-      continue;
-    }
-
-    const id = (idCol >= 0 && getVal(idCol)) ? getVal(idCol) : `PKW-${Date.now()}-${r}`;
-    const academicYear = (yearCol >= 0 && getVal(yearCol)) ? getVal(yearCol) : '2568';
-    const awardLevel = ((levelCol >= 0 && getVal(levelCol)) ? getVal(levelCol) : 'ระดับเขตพื้นที่') as any;
-    const department = ((deptCol >= 0 && getVal(deptCol)) ? getVal(deptCol) : 'กลุ่มบริหารงานบุคคล') as any;
-    const rawDate = dateCol >= 0 ? getVal(dateCol) : '';
-    const awardDate = formatDisplayDate(rawDate);
-    const organizer = orgCol >= 0 ? getVal(orgCol) : '';
-    const teacherName = teacherCol >= 0 ? getVal(teacherCol) : '';
-    const studentName = studentCol >= 0 ? getVal(studentCol) : '-';
-    const objective = objCol >= 0 ? getVal(objCol) : '';
-    const additionalDetails = detailsCol >= 0 ? getVal(detailsCol) : '';
-    const outcomes = outcomesCol >= 0 ? getVal(outcomesCol) : '';
-    let folderUrl = folderCol >= 0 ? getVal(folderCol) : '';
-
-    let photoUrls: string[] = [];
-    let certUrls: string[] = [];
-    let docUrls: string[] = [];
-
-    // Check evidence JSON column if present
-    if (evidenceJsonCol >= 0) {
-      const rawEvidence = getVal(evidenceJsonCol);
-      if (rawEvidence && rawEvidence.startsWith('{')) {
-        try {
-          const parsed = JSON.parse(rawEvidence);
-          if (Array.isArray(parsed.photos)) photoUrls = [...photoUrls, ...parsed.photos];
-          if (Array.isArray(parsed.certificates)) certUrls = [...certUrls, ...parsed.certificates];
-          if (Array.isArray(parsed.documents)) docUrls = [...docUrls, ...parsed.documents];
-          if (!folderUrl && parsed.folderUrl) folderUrl = parsed.folderUrl;
-        } catch (e) {}
-      }
-    }
-
-    // Check specific columns
-    if (photosCol >= 0) {
-      const rawP = getVal(photosCol);
-      if (rawP) {
-        photoUrls = [...photoUrls, ...extractUrls(rawP)];
-      }
-    }
-    if (certsCol >= 0) {
-      const rawC = getVal(certsCol);
-      if (rawC) {
-        certUrls = [...certUrls, ...extractUrls(rawC)];
-      }
-    }
-    if (docsCol >= 0) {
-      const rawD = getVal(docsCol);
-      if (rawD) {
-        docUrls = [...docUrls, ...extractUrls(rawD)];
-      }
-    }
-
-    // De-duplicate URLs
-    const uniquePhotos = Array.from(new Set(photoUrls.filter(Boolean)));
-    const uniqueCerts = Array.from(new Set(certUrls.filter(Boolean)));
-    const uniqueDocs = Array.from(new Set(docUrls.filter(Boolean)));
-
-    records.push({
-      id,
-      academicYear,
-      awardLevel,
-      department,
-      awardName,
-      awardDate,
-      organizer,
-      teacherName,
-      studentName,
-      objective,
-      additionalDetails,
-      outcomes,
-      folderUrl,
-      photos: uniquePhotos.map((url, i) => ({
-        name: `ภาพถ่าย_${i + 1}`,
-        type: 'image/jpeg',
-        size: 0,
-        url: formatDriveImageUrl(url),
-        originalUrl: url,
-      })),
-      certificates: uniqueCerts.map((url, i) => ({
-        name: `เกียรติบัตร_${i + 1}`,
-        type: url.includes('.pdf') ? 'application/pdf' : 'image/jpeg',
-        size: 0,
-        url: formatDriveImageUrl(url),
-        originalUrl: url,
-      })),
-      documents: uniqueDocs.map((url, i) => ({
-        name: `เอกสาร_${i + 1}`,
-        type: 'application/pdf',
-        size: 0,
-        url: url,
-      })),
-      createdAt: timeCol >= 0 && getVal(timeCol) ? getVal(timeCol) : new Date().toISOString(),
-      syncStatus: 'synced',
-    });
-  }
-
-  // Newest first
-  return records.reverse();
-}
-
-/**
- * Fetch real activity records directly from Google Sheet (REAL-TIME SINGLE SOURCE OF TRUTH).
- * When Google Sheet responds, it overwrites local cache completely (including [] if sheet is empty).
- */
-export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]> {
-  let gvizSucceeded = false;
-  let allRecords: ActivityRecord[] = [];
-
-  // Method 1: Google Sheet Visualization API for tab 'บันทึกผลงานกิจกรรม'
-  try {
-    const sheetParam = encodeURIComponent('บันทึกผลงานกิจกรรม');
-    const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheetParam}&t=${Date.now()}`;
-    const res = await fetch(gvizUrl);
-    if (res.ok) {
-      const text = await res.text();
-      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
-      if (match && match[1]) {
-        gvizSucceeded = true;
-        const json = JSON.parse(match[1]);
-        const records = parseGvizTable(json.table);
-        if (records.length > 0) {
-          allRecords = records;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Gviz fetch sheet บันทึกผลงานกิจกรรม error:', err);
-  }
-
-  // Method 2: Google Sheet Visualization API for default sheet / Sheet1
-  if (allRecords.length === 0) {
-    try {
-      const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&t=${Date.now()}`;
-      const res = await fetch(gvizUrl);
-      if (res.ok) {
-        const text = await res.text();
-        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
-        if (match && match[1]) {
-          gvizSucceeded = true;
-          const json = JSON.parse(match[1]);
-          const records = parseGvizTable(json.table);
-          if (records.length > 0) {
-            allRecords = records;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Gviz default tab fetch error:', err);
-    }
-  }
-
-  // Method 3: Google Apps Script Web App doGet
-  if (allRecords.length === 0) {
-    try {
-      const appsScriptUrl = `${APPS_SCRIPT_CONFIG.ENDPOINT_URL}?action=getActivities&sheetId=${APPS_SCRIPT_CONFIG.SHEET_ID}&t=${Date.now()}`;
-      const res = await fetch(appsScriptUrl);
-      if (res.ok) {
-        const json = await res.json();
-        if (json && Array.isArray(json.records)) {
-          gvizSucceeded = true;
-          if (json.records.length > 0) {
-            allRecords = json.records;
-          }
-        }
-      }
-    } catch (appsScriptErr) {
-      console.warn('Apps Script doGet failed:', appsScriptErr);
-    }
-  }
-
-  // REAL-TIME GUARANTEE: If Google Sheet query succeeded, the sheet's state IS authoritative.
-  if (gvizSucceeded) {
-    saveAllActivities(allRecords);
-    return allRecords;
-  }
-
-  // Fallback ONLY when totally offline / network unreachable
-  return loadStoredActivities([]);
-}
-
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * ============================================================================
  * สคริปต์ Google Apps Script (Code.gs)
@@ -731,8 +892,8 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * คุณสมบัติสำคัญ:
  * 1. ระบบโฟลเดอร์ Google Drive:
  *    สร้างโฟลเดอร์กลุ่มสาระ -> แล้วสร้างโฟลเดอร์ผู้อัปโหลดข้างใน -> บันทึกไฟล์ทั้งหมดในนั้น
- * 2. รับข้อมูลแบบ JSON ไม่จำกัดขนาด ป้องกันบัคภาพตัด และบันทึกลง Google Sheet แน่นอน 100%
- * 3. มีฟังก์ชัน doGet สำหรับดึงข้อมูลผลงานทั้งหมดกลับไปแสดงผลที่หน้าเว็บ
+ * 2. บันทึกลิงก์รูปภาพในรูปแบบ Direct High-Res CDN Thumbnail ให้แสดงผลตัวอย่างรูปภาพได้ทันที 100%
+ * 3. มีฟังก์ชัน doGet สำหรับดึงข้อมูลผลงานทั้งหมดแบบเรียลไทม์
  */
 
 const CONFIG = {
@@ -741,7 +902,6 @@ const CONFIG = {
   SHEET_NAME: 'บันทึกผลงานกิจกรรม'
 };
 
-// ฟังก์ชันช่วยค้นหาหรือสร้างโฟลเดอร์ย่อยใน Google Drive
 function getOrCreateSubfolder(parentFolder, folderName) {
   var cleanName = (folderName || 'ทั่วไป').toString().trim();
   if (!cleanName || cleanName === '-') cleanName = 'ทั่วไป';
@@ -798,11 +958,7 @@ function doPost(e) {
 
     try {
       var rootFolder = DriveApp.getFolderById(folderId);
-
-      // สร้าง/เข้าถึง โฟลเดอร์กลุ่มสาระ
       var deptFolder = getOrCreateSubfolder(rootFolder, department);
-
-      // สร้าง/เข้าถึง โฟลเดอร์ผู้อัปโหลด (ชื่อครู) ข้างในโฟลเดอร์กลุ่มสาระ
       var uploaderFolder = getOrCreateSubfolder(deptFolder, teacherName);
       uploaderFolderUrl = uploaderFolder.getUrl();
 
@@ -821,7 +977,10 @@ function doPost(e) {
             var photoBlob = Utilities.newBlob(decodedPhoto, mimePhoto, photoName);
             var photoFile = uploaderFolder.createFile(photoBlob);
             photoFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-            photoUrls.push(photoFile.getUrl());
+            var fileId = photoFile.getId();
+            // บันทึก URL แบบ Thumbnail เพื่อให้แท็ก <img> แสดงภาพตัวอย่างได้ทันที
+            var thumbUrl = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+            photoUrls.push(thumbUrl);
           } catch(errPhoto) {
             console.error('Error saving photo: ' + errPhoto);
           }
@@ -830,7 +989,7 @@ function doPost(e) {
         }
       }
 
-      // บันทึกเกียรติบัตร (ไฟล์ภาพ หรือ PDF)
+      // บันทึกเกียรติบัตร
       var certs = data.certificates || [];
       if (typeof certs === 'string') {
         try { certs = JSON.parse(certs); } catch(ce) {}
@@ -845,7 +1004,11 @@ function doPost(e) {
             var certBlob = Utilities.newBlob(decodedCert, mimeCert, certName);
             var certFile = uploaderFolder.createFile(certBlob);
             certFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-            certUrls.push(certFile.getUrl());
+            var cId = certFile.getId();
+            var certUrl = (mimeCert.indexOf('image') !== -1)
+              ? ('https://drive.google.com/thumbnail?id=' + cId + '&sz=w1200')
+              : certFile.getUrl();
+            certUrls.push(certUrl);
           } catch(errCert) {
             console.error('Error saving certificate: ' + errCert);
           }
@@ -895,7 +1058,6 @@ function doPost(e) {
       }
     }
 
-    // สร้าง Header ถ้าเป็นชีตใหม่
     if (sheet.getLastRow() === 0) {
       sheet.appendRow([
         'รหัสกิจกรรม',
@@ -942,7 +1104,7 @@ function doPost(e) {
 
     sheet.appendRow(rowData);
 
-    // หากชีตแรกมีโครงสร้างของระบบผู้ใช้ บันทึกลงชีตแรกด้วยเพื่อให้ข้อมูลสอดคล้องกันทุกแท็บ
+    // บันทึกลง Sheet แรกด้วย (หากมี) เพื่อรองรับทุกโครงสร้างตาราง
     try {
       var firstSheet = ss.getSheets()[0];
       if (firstSheet && firstSheet.getName() !== sheet.getName() && firstSheet.getLastRow() > 0) {
@@ -1028,6 +1190,18 @@ function doGet(e) {
       var certUrls = (row[13] || '').toString().split(/\\r?\\n/).filter(function(u){ return u.trim().startsWith('http'); });
       var docUrls = (row[14] || '').toString().split(/\\r?\\n/).filter(function(u){ return u.trim().startsWith('http'); });
       var folderUrl = (row[16] || '').toString().trim();
+
+      // Check if row[13] has JSON
+      var row13Str = (row[13] || '').toString();
+      if (row13Str.startsWith('{')) {
+        try {
+          var parsedEvidence = JSON.parse(row13Str);
+          if (Array.isArray(parsedEvidence.photos)) photoUrls = photoUrls.concat(parsedEvidence.photos);
+          if (Array.isArray(parsedEvidence.certificates)) certUrls = certUrls.concat(parsedEvidence.certificates);
+          if (Array.isArray(parsedEvidence.documents)) docUrls = docUrls.concat(parsedEvidence.documents);
+          if (!folderUrl && parsedEvidence.folderUrl) folderUrl = parsedEvidence.folderUrl;
+        } catch(pe) {}
+      }
 
       records.push({
         id: String(row[0] || ('PKW-' + r)),

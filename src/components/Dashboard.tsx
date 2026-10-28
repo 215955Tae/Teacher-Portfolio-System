@@ -18,6 +18,7 @@ import {
   UserCheck,
   Calendar,
 } from 'lucide-react';
+import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
 
 interface DashboardProps {
@@ -726,10 +727,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   className="group py-4 px-3 -mx-3 rounded-lg hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer"
                 >
                   <div className="flex items-start gap-3.5">
-                    {/* ไอคอนถ้วยรางวัลวงกลมสีม่วงทางซ้าย */}
-                    <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                      <Trophy className="w-5 h-5" />
-                    </div>
+                    {/* ภาพตัวอย่างผลงาน หรือ ไอคอนถ้วยรางวัล */}
+                    {act.photos && act.photos.length > 0 && (act.photos[0].url || act.photos[0].base64) ? (
+                      <div className="w-11 h-11 rounded-lg overflow-hidden border border-slate-200 shrink-0 mt-0.5 group-hover:scale-105 transition-transform bg-slate-100">
+                        <ActivityImage
+                          src={act.photos[0].url || (act.photos[0].base64 ? `data:${act.photos[0].type};base64,${act.photos[0].base64}` : '')}
+                          originalUrl={act.photos[0].originalUrl}
+                          alt={act.awardName}
+                          containerClassName="w-full h-full"
+                          className="w-full h-full object-cover"
+                          fallbackTitle=""
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                        <Trophy className="w-5 h-5" />
+                      </div>
+                    )}
 
                     <div className="space-y-0.5">
                       {/* ชื่อผลงาน (ข้อความหลัก) */}

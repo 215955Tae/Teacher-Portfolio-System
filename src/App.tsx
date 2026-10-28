@@ -33,11 +33,12 @@ export default function App() {
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
-  // Initial load from Google Sheet (Only real records, zero mock data)
+  // Real-time synchronization: Initial load, 30s polling, and window focus sync
   useEffect(() => {
     let isMounted = true;
-    const fetchRealData = async () => {
-      setIsLoadingSheet(true);
+
+    const fetchRealData = async (silent = false) => {
+      if (!silent) setIsLoadingSheet(true);
       try {
         const liveRecords = await fetchActivitiesFromGoogleSheet();
         if (isMounted) {
@@ -45,17 +46,32 @@ export default function App() {
           setLastSyncedTime(new Date().toLocaleTimeString('th-TH'));
         }
       } catch (err) {
-        console.warn('Failed to fetch from Google Sheet on start:', err);
+        console.warn('Real-time sync from Google Sheet note:', err);
       } finally {
-        if (isMounted) {
+        if (isMounted && !silent) {
           setIsLoadingSheet(false);
         }
       }
     };
 
-    fetchRealData();
+    // 1. Initial fetch
+    fetchRealData(false);
+
+    // 2. Poll every 30 seconds for live sheet changes
+    const intervalId = setInterval(() => {
+      fetchRealData(true);
+    }, 30000);
+
+    // 3. Fetch when user switches back to this tab
+    const handleWindowFocus = () => {
+      fetchRealData(true);
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
       isMounted = false;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, []);
 

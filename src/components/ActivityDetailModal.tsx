@@ -19,6 +19,7 @@ import {
   Award,
   Folder,
 } from 'lucide-react';
+import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
 
 interface ActivityDetailModalProps {
@@ -102,14 +103,19 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
               </h3>
 
               <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center group">
-                <img
+                <ActivityImage
                   src={
                     photos[activePhotoIdx].url ||
-                    `data:${photos[activePhotoIdx].type};base64,${photos[activePhotoIdx].base64}`
+                    (photos[activePhotoIdx].base64
+                      ? `data:${photos[activePhotoIdx].type};base64,${photos[activePhotoIdx].base64}`
+                      : '')
                   }
+                  originalUrl={photos[activePhotoIdx].originalUrl}
                   alt={photos[activePhotoIdx].name}
-                  referrerPolicy="no-referrer"
                   className="w-full h-full object-contain"
+                  containerClassName="w-full h-full flex items-center justify-center bg-slate-950"
+                  showOpenButton={true}
+                  fallbackTitle="ภาพถ่ายกิจกรรม"
                 />
 
                 {photos.length > 1 && (
@@ -120,7 +126,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                           prev === 0 ? photos.length - 1 : prev - 1
                         )
                       }
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
                     >
                       <ChevronLeft className="w-5 h-5" />
                     </button>
@@ -130,14 +136,14 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                           prev === photos.length - 1 ? 0 : prev + 1
                         )
                       }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
                     >
                       <ChevronRight className="w-5 h-5" />
                     </button>
                   </>
                 )}
 
-                <span className="absolute bottom-2 left-3 bg-black/70 text-white text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium">
+                <span className="absolute bottom-2 left-3 bg-black/70 text-white text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none">
                   {photos[activePhotoIdx].name} ({activePhotoIdx + 1}/{photos.length})
                 </span>
               </div>
@@ -149,17 +155,19 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                     <button
                       key={idx}
                       onClick={() => setActivePhotoIdx(idx)}
-                      className={`relative w-20 h-14 rounded-lg overflow-hidden border-2 transition-all ${
+                      className={`relative w-20 h-14 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
                         activePhotoIdx === idx
                           ? 'border-red-600 scale-105'
                           : 'border-slate-200 opacity-70 hover:opacity-100'
                       }`}
                     >
-                      <img
-                        src={p.url || `data:${p.type};base64,${p.base64}`}
+                      <ActivityImage
+                        src={p.url || (p.base64 ? `data:${p.type};base64,${p.base64}` : '')}
+                        originalUrl={p.originalUrl}
                         alt={p.name}
-                        referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
+                        containerClassName="w-full h-full"
+                        fallbackTitle=""
                       />
                     </button>
                   ))}
@@ -258,12 +266,17 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                       className="flex items-center justify-between p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs shadow-2xs"
                     >
                       <div className="flex items-center gap-2.5 truncate">
-                        {isImage && cert.url ? (
-                          <img
-                            src={cert.url}
-                            alt={cert.name}
-                            className="w-10 h-10 object-cover rounded-md border border-amber-300 shrink-0"
-                          />
+                        {isImage && (cert.url || cert.base64) ? (
+                          <div className="w-10 h-10 rounded-md overflow-hidden border border-amber-300 shrink-0">
+                            <ActivityImage
+                              src={cert.url || (cert.base64 ? `data:${cert.type};base64,${cert.base64}` : '')}
+                              originalUrl={cert.originalUrl}
+                              alt={cert.name}
+                              className="w-full h-full object-cover"
+                              containerClassName="w-full h-full"
+                              fallbackTitle=""
+                            />
+                          </div>
                         ) : (
                           <div className="w-10 h-10 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
                             <Award className="w-5 h-5" />
