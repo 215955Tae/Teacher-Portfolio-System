@@ -676,7 +676,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
                     เปิดโฟลเดอร์ Google Drive (Activities)
                   </span>
                   <span className="text-[11px] text-amber-800 font-mono block truncate">
-                    1. {record.department} ➔ 2. {record.teacherName || 'ผู้รายงาน'} ➔ 3. {record.awardName || record.id} (รูปกิจกรรม, เกียรติบัตร, ไฟล์เอกสาร)
+                    1. ผลงานปี {record.academicYear} ➔ 2. {record.department} ➔ 3. {record.teacherName || 'ผู้รายงาน'} ➔ 4. {record.awardName || record.id} (ภาพถ่ายกิจกรรม, เกียรติบัตร, ไฟล์เอกสารเพิ่มเติม)
                   </span>
                 </div>
               </div>

@@ -487,11 +487,11 @@ export const ActivityForm: React.FC<ActivityFormProps> = ({
               4. แนบไฟล์หลักฐานและภาพถ่ายกิจกรรม
             </h3>
             <span className="text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 font-medium">
-              Activities ➔ 1.กลุ่มสาระ ➔ 2.ชื่อครู ➔ 3.ผลงาน (รูปกิจกรรม, เกียรติบัตร, ไฟล์เอกสาร)
+              Activities ➔ 1.ปีการศึกษา ➔ 2.กลุ่มสาระ ➔ 3.ชื่อครู ➔ 4.ผลงาน (ภาพถ่ายกิจกรรม, เกียรติบัตร, ไฟล์เอกสารเพิ่มเติม)
             </span>
           </div>
           <div className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-            ระบบจะสร้างหรือใช้โฟลเดอร์ตามข้อมูลที่กรอกเข้ามาใน Google Drive ID: <code className="font-mono text-slate-700 font-bold">1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym</code> (ไม่สร้างโฟลเดอร์ซ้ำซ้อนหากมีอยู่แล้ว)
+            ระบบจะสร้างหรือใช้โฟลเดอร์ตามข้อมูลที่กรอกเข้ามาใน Google Drive ID: <code className="font-mono text-slate-700 font-bold">1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym</code> (Activities ➔ 1.ผลงานปี {academicYear} ➔ 2.กลุ่มสาระ ➔ 3.ชื่อครู ➔ 4.ผลงาน) และใช้อันเดิมเสมอหากมีอยู่แล้ว ไม่สร้างโฟลเดอร์ซ้ำซ้อน
           </div>
 
           {/* อัปโหลดภาพถ่ายกิจกรรม (1-3 รูปต่อกิจกรรม) */}

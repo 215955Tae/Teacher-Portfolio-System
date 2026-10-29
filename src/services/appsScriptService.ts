@@ -1008,14 +1008,15 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * FOLDER_ID : 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym (Activities)
  *
  * คุณสมบัติสำคัญ:
- * 1. ระบบโฟลเดอร์ Google Drive จัดเรียง 4 ระดับใน Activities (ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym) เท่านั้น:
+ * 1. ระบบโฟลเดอร์ Google Drive จัดเรียง 5 ระดับใน Activities (ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym) เท่านั้น:
  *    Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym)
- *      └── 1. กลุ่มสาระการเรียนรู้ (เช่น 3. วิทยาศาสตร์และเทคโนโลยี)
- *            └── 2. ชื่อครูในกลุ่มสาระนั้นๆ (เช่น รัชพล สิงห์ปั้น)
- *                  └── 3. ผลงานของครูในแต่ละคนแยกไปเลย (เช่น ชื่อรางวัลหรือกิจกรรม)
- *                        ├── ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)
- *                        ├── ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)
- *                        └── ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)
+ *      └── 1. ปีการศึกษา (เช่น ผลงานปี 2568) ให้อ้างอิงตามข้อมูลที่เพิ่มมา
+ *            └── 2. กลุ่มสาระการเรียนรู้ (เช่น 3. วิทยาศาสตร์และเทคโนโลยี)
+ *                  └── 3. ชื่อครูในกลุ่มสาระนั้นๆ (เช่น รัชพล สิงห์ปั้น)
+ *                        └── 4. ผลงานของครูในแต่ละคนแยกไปเลย (เช่น ชื่อรางวัลหรือกิจกรรม)
+ *                              ├── ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)
+ *                              ├── ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)
+ *                              └── ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)
  *    * ไม่สร้างโฟลเดอร์ซ้ำซ้อน หากมีอยู่แล้วจะใช้อันเดิมเสมอ (getOrCreateSubfolder)
  * 2. บันทึกลิงก์รูปภาพในรูปแบบ Direct High-Res CDN Thumbnail ให้แสดงผลตัวอย่างรูปภาพได้ทันที 100%
  * 3. มีฟังก์ชัน doGet สำหรับดึงข้อมูลผลงานทั้งหมดแบบเรียลไทม์
@@ -1040,9 +1041,12 @@ function getOrCreateSubfolder(parentFolder, folderName, aliases) {
   // 2. หากมีชื่อเรียกเดิม (aliases) ให้ตรวจและใช้อันเดิม ไม่สร้างโฟลเดอร์ซ้ำซ้อน
   if (aliases && Array.isArray(aliases)) {
     for (var a = 0; a < aliases.length; a++) {
-      var aliasFolders = parentFolder.getFoldersByName(aliases[a]);
-      if (aliasFolders.hasNext()) {
-        return aliasFolders.next();
+      var aliasName = (aliases[a] || '').toString().trim();
+      if (aliasName) {
+        var aliasFolders = parentFolder.getFoldersByName(aliasName);
+        if (aliasFolders.hasNext()) {
+          return aliasFolders.next();
+        }
       }
     }
   }
@@ -1088,13 +1092,15 @@ function doPost(e) {
     var timestamp = new Date().toLocaleString('th-TH');
 
     // 1. จัดการโครงสร้างโฟลเดอร์ใน Activities (ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym) เท่านั้น
-    // Activities
-    //   └── 1. กลุ่มสาระการเรียนรู้
-    //         └── 2. ชื่อครูในกลุ่มสาระนั้นๆ
-    //               └── 3. ผลงานของครูในแต่ละคนแยกไปเลย
-    //                     ├── ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)
-    //                     ├── ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)
-    //                     └── ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)
+    // โครงสร้างโฟลเดอร์ 5 ระดับ:
+    // Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym)
+    // └── 1. ปีการศึกษา (เช่น ผลงานปี 2568 ) ให้อ้างอิงตามข้อมูลที่เพิ่มมา
+    //       └── 2. กลุ่มสาระการเรียนรู้ (เช่น 3. วิทยาศาสตร์และเทคโนโลยี)
+    //             └── 3. ชื่อครูในกลุ่มสาระนั้นๆ (เช่น รัชพล สิงห์ปั้น)
+    //                   └── 4. ผลงานของครูในแต่ละคนแยกไปเลย (เช่น ชื่อรางวัลหรือกิจกรรม)
+    //                         ├── ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)
+    //                         ├── ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)
+    //                         └── ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)
     var uploaderFolderUrl = '';
     var photoUrls = [];
     var certUrls = [];
@@ -1103,21 +1109,32 @@ function doPost(e) {
     try {
       var rootFolder = DriveApp.getFolderById(folderId);
 
-      // ระดับ 1: โฟลเดอร์กลุ่มสาระในโฟลเดอร์ Activities
-      var deptFolder = getOrCreateSubfolder(rootFolder, department);
+      // ระดับ 1: โฟลเดอร์ปีการศึกษา (เช่น ผลงานปี 2568) ใน Activities
+      var cleanYear = (academicYear || '2568').toString().trim();
+      var yearFolderName = cleanYear.indexOf('ผลงานปี') === 0 ? cleanYear : ('ผลงานปี ' + cleanYear);
+      var yearAliases = [
+        cleanYear,
+        'ปีการศึกษา ' + cleanYear,
+        'ผลงานปี ' + cleanYear,
+        'ปี ' + cleanYear
+      ];
+      var yearFolder = getOrCreateSubfolder(rootFolder, yearFolderName, yearAliases);
 
-      // ระดับ 2: ชื่อครูในโฟลเดอร์กลุ่มสาระนั้นๆ
+      // ระดับ 2: กลุ่มสาระการเรียนรู้ ในโฟลเดอร์ปีการศึกษา
+      var deptFolder = getOrCreateSubfolder(yearFolder, department);
+
+      // ระดับ 3: ชื่อครูในกลุ่มสาระนั้นๆ ในโฟลเดอร์กลุ่มสาระ
       var teacherFolder = getOrCreateSubfolder(deptFolder, teacherName);
 
-      // ระดับ 3: ผลงานของครูในแต่ละคนแยกไปเลยในโฟลเดอร์ครู
+      // ระดับ 4: ผลงานของครูในแต่ละคนแยกไปเลย ในโฟลเดอร์ครู
       var activityFolderName = (awardName || id).toString().trim();
       var activityFolder = getOrCreateSubfolder(teacherFolder, activityFolderName);
       uploaderFolderUrl = activityFolder.getUrl();
 
-      // ระดับ 4: โฟลเดอร์ย่อย 3 โฟลเดอร์ข้างในผลงาน
-      var photosSubfolder = getOrCreateSubfolder(activityFolder, 'ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)', ['รูปกิจกรรม', 'ภาพกิจกรรม']);
-      var certsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)', ['เกียรติบัตร', 'วุฒิบัตร']);
-      var docsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)', ['ไฟล์เอกสารเพิ่มเติม', 'ไฟล์เอกสาร', 'เอกสาร']);
+      // โฟลเดอร์ย่อย 3 โฟลเดอร์ข้างในผลงาน
+      var photosSubfolder = getOrCreateSubfolder(activityFolder, 'ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)', ['รูปกิจกรรม', 'ภาพกิจกรรม', 'ภาพถ่ายกิจกรรม']);
+      var certsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)', ['เกียรติบัตร', 'วุฒิบัตร', 'ไฟล์เกียรติบัตร']);
+      var docsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)', ['ไฟล์เอกสารเพิ่มเติม', 'ไฟล์เอกสาร', 'เอกสาร', 'เอกสารเพิ่มเติม']);
 
       // 1) บันทึกรูปภาพกิจกรรม (1–3 รูปต่อกิจกรรม) ลงในโฟลเดอร์ "รูปกิจกรรม"
       var photos = data.photos || [];

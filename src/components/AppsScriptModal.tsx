@@ -34,11 +34,11 @@ export const AppsScriptModal: React.FC<AppsScriptModalProps> = ({
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <span>โค้ด Google Apps Script (Code.gs)</span>
                 <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-md font-mono">
-                  v2568 (โครงสร้าง 4 ระดับใน Activities)
+                  v2568 (โครงสร้าง 5 ระดับใน Activities)
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Activities ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym ➔ กลุ่มสาระ ➔ ชื่อครู ➔ ผลงาน (ภาพถ่ายกิจกรรม, เกียรติบัตร, เอกสารเพิ่มเติม)
+                Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym) ➔ 1.ปีการศึกษา ➔ 2.กลุ่มสาระ ➔ 3.ชื่อครู ➔ 4.ผลงาน (ภาพถ่ายกิจกรรม, เกียรติบัตร, ไฟล์เอกสารเพิ่มเติม)
               </p>
             </div>
           </div>
