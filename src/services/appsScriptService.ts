@@ -1109,14 +1109,17 @@ function doPost(e) {
     try {
       var rootFolder = DriveApp.getFolderById(folderId);
 
-      // ระดับ 1: โฟลเดอร์ปีการศึกษา (เช่น ผลงานปี 2568) ใน Activities
-      var cleanYear = (academicYear || '2568').toString().trim();
-      var yearFolderName = cleanYear.indexOf('ผลงานปี') === 0 ? cleanYear : ('ผลงานปี ' + cleanYear);
+      // ระดับ 1: โฟลเดอร์ปีการศึกษา (เช่น ผลงานปี 2568) ใน Activities อ้างอิงตามปีการศึกษาที่กรอกในฟอร์ม
+      var rawYear = (academicYear || '2568').toString().trim();
+      var numMatch = rawYear.match(/\d{4}/);
+      var yearNum = numMatch ? numMatch[0] : rawYear;
+      var yearFolderName = 'ผลงานปี ' + yearNum;
       var yearAliases = [
-        cleanYear,
-        'ปีการศึกษา ' + cleanYear,
-        'ผลงานปี ' + cleanYear,
-        'ปี ' + cleanYear
+        yearFolderName,
+        yearNum,
+        'ปีการศึกษา ' + yearNum,
+        'ปี ' + yearNum,
+        rawYear
       ];
       var yearFolder = getOrCreateSubfolder(rootFolder, yearFolderName, yearAliases);
 
