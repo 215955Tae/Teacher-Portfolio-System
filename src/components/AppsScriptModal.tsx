@@ -38,7 +38,7 @@ export const AppsScriptModal: React.FC<AppsScriptModalProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Activities ➔ 1.กลุ่มสาระ ➔ 2.ชื่อครู ➔ 3.ผลงาน (รูปกิจกรรม, เกียรติบัตร, ไฟล์เอกสาร) และใช้อันเดิมไม่สร้างซ้ำซ้อน
+                Activities ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym ➔ กลุ่มสาระ ➔ ชื่อครู ➔ ผลงาน (ภาพถ่ายกิจกรรม, เกียรติบัตร, เอกสารเพิ่มเติม)
               </p>
             </div>
           </div>

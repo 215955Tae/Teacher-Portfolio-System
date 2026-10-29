@@ -23,6 +23,7 @@ import {
   submitActivityToAppsScript,
   saveRecordToLocalStorage,
   getPreviewMedia,
+  formatDisplayDate,
 } from '../services/appsScriptService';
 
 interface ActivityListProps {
@@ -411,7 +412,7 @@ export const ActivityList: React.FC<ActivityListProps> = ({
 
                       {/* วันที่ประกาศผลงาน (ตัวอักษรเล็ก) */}
                       <span className="text-[11px] text-slate-400 font-mono">
-                        {item.awardDate}
+                        {formatDisplayDate(item.awardDate)}
                       </span>
                     </div>
 

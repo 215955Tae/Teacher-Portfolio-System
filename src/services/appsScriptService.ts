@@ -603,13 +603,29 @@ function parseGvizTable(table: any): ActivityRecord[] {
 }
 
 /**
+ * Safe fetch helper with timeout to prevent hanging requests on mobile/slow connections.
+ */
+async function fetchWithTimeout(url: string, timeoutMs = 4000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+/**
  * Fetch real activity records directly from Google Sheet (REAL-TIME SINGLE SOURCE OF TRUTH).
- * Multi-layer fallback:
- * 1) Direct CSV query from tab "บันทึกผลงานกิจกรรม"
- * 2) Direct CSV query from Sheet1
- * 3) GViz JSON query from tab "บันทึกผลงานกิจกรรม"
- * 4) GViz JSON query from Sheet1
- * 5) Apps Script doGet API
+ * Multi-layer fallback with strict timeouts (max 3.5s per query, never hangs or flickers):
+ * 1) Direct CSV query from default tab (Fastest, ~300ms)
+ * 2) Direct CSV query from tab "บันทึกผลงานกิจกรรม"
+ * 3) GViz JSON query from default tab
+ * 4) GViz JSON query from tab "บันทึกผลงานกิจกรรม"
+ * 5) Apps Script doGet API (with 3.5s safety timeout)
  */
 export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]> {
   let sheetReached = false;
@@ -617,10 +633,10 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
 
   const tabNameEncoded = encodeURIComponent('บันทึกผลงานกิจกรรม');
 
-  // STRATEGY 1: CSV from "บันทึกผลงานกิจกรรม"
+  // STRATEGY 1: CSV from default Sheet (Fastest, takes ~300ms)
   try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${tabNameEncoded}&t=${Date.now()}`;
-    const res = await fetch(csvUrl);
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&t=${Date.now()}`;
+    const res = await fetchWithTimeout(csvUrl, 3500);
     if (res.ok) {
       const text = await res.text();
       sheetReached = true;
@@ -633,14 +649,14 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
       }
     }
   } catch (err) {
-    console.warn('CSV tab fetch error:', err);
+    console.warn('Fast CSV fetch note:', err);
   }
 
-  // STRATEGY 2: CSV from default Sheet1
+  // STRATEGY 2: CSV from "บันทึกผลงานกิจกรรม"
   if (records.length === 0) {
     try {
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&t=${Date.now()}`;
-      const res = await fetch(csvUrl);
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${tabNameEncoded}&t=${Date.now()}`;
+      const res = await fetchWithTimeout(csvUrl, 3500);
       if (res.ok) {
         const text = await res.text();
         sheetReached = true;
@@ -653,37 +669,15 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
         }
       }
     } catch (err) {
-      console.warn('CSV default tab fetch error:', err);
+      console.warn('CSV tab fetch error:', err);
     }
   }
 
-  // STRATEGY 3: GViz JSON from "บันทึกผลงานกิจกรรม"
-  if (records.length === 0) {
-    try {
-      const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${tabNameEncoded}&t=${Date.now()}`;
-      const res = await fetch(gvizUrl);
-      if (res.ok) {
-        const text = await res.text();
-        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
-        if (match && match[1]) {
-          sheetReached = true;
-          const json = JSON.parse(match[1]);
-          const parsed = parseGvizTable(json.table);
-          if (parsed.length > 0) {
-            records = parsed;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('GViz tab fetch error:', err);
-    }
-  }
-
-  // STRATEGY 4: GViz JSON from Sheet1
+  // STRATEGY 3: GViz JSON from default sheet
   if (records.length === 0) {
     try {
       const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&t=${Date.now()}`;
-      const res = await fetch(gvizUrl);
+      const res = await fetchWithTimeout(gvizUrl, 3500);
       if (res.ok) {
         const text = await res.text();
         const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
@@ -701,11 +695,33 @@ export async function fetchActivitiesFromGoogleSheet(): Promise<ActivityRecord[]
     }
   }
 
-  // STRATEGY 5: Apps Script doGet API
+  // STRATEGY 4: GViz JSON from "บันทึกผลงานกิจกรรม"
+  if (records.length === 0) {
+    try {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${APPS_SCRIPT_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${tabNameEncoded}&t=${Date.now()}`;
+      const res = await fetchWithTimeout(gvizUrl, 3500);
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);?/);
+        if (match && match[1]) {
+          sheetReached = true;
+          const json = JSON.parse(match[1]);
+          const parsed = parseGvizTable(json.table);
+          if (parsed.length > 0) {
+            records = parsed;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('GViz tab fetch error:', err);
+    }
+  }
+
+  // STRATEGY 5: Apps Script doGet API (Strict 3.5s timeout)
   if (records.length === 0) {
     try {
       const appsScriptUrl = `${APPS_SCRIPT_CONFIG.ENDPOINT_URL}?action=getActivities&sheetId=${APPS_SCRIPT_CONFIG.SHEET_ID}&t=${Date.now()}`;
-      const res = await fetch(appsScriptUrl);
+      const res = await fetchWithTimeout(appsScriptUrl, 3500);
       if (res.ok) {
         const json = await res.json();
         if (json && Array.isArray(json.records)) {
@@ -972,14 +988,14 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * FOLDER_ID : 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym (Activities)
  *
  * คุณสมบัติสำคัญ:
- * 1. ระบบโฟลเดอร์ Google Drive จัดเรียง 4 ระดับ:
+ * 1. ระบบโฟลเดอร์ Google Drive จัดเรียง 4 ระดับใน Activities (ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym) เท่านั้น:
  *    Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym)
- *      └── 1. กลุ่มสาระการเรียนรู้ (ตามที่เลือกในหน้าเพิ่มกิจกรรม)
- *            └── 2. ชื่อของครูที่ส่งผลงาน
- *                  └── 3. ผลงาน (ชื่อรางวัล/กิจกรรม)
- *                        ├── รูปกิจกรรม (ภาพถ่ายกิจกรรม 1-3 รูป)
- *                        ├── เกียรติบัตร (ไฟล์เกียรติบัตร/วุฒิบัตร)
- *                        └── ไฟล์เอกสาร (ไฟล์เอกสารเพิ่มเติม)
+ *      └── 1. กลุ่มสาระการเรียนรู้ (เช่น 3. วิทยาศาสตร์และเทคโนโลยี)
+ *            └── 2. ชื่อครูในกลุ่มสาระนั้นๆ (เช่น รัชพล สิงห์ปั้น)
+ *                  └── 3. ผลงานของครูในแต่ละคนแยกไปเลย (เช่น ชื่อรางวัลหรือกิจกรรม)
+ *                        ├── ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)
+ *                        ├── ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)
+ *                        └── ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)
  *    * ไม่สร้างโฟลเดอร์ซ้ำซ้อน หากมีอยู่แล้วจะใช้อันเดิมเสมอ (getOrCreateSubfolder)
  * 2. บันทึกลิงก์รูปภาพในรูปแบบ Direct High-Res CDN Thumbnail ให้แสดงผลตัวอย่างรูปภาพได้ทันที 100%
  * 3. มีฟังก์ชัน doGet สำหรับดึงข้อมูลผลงานทั้งหมดแบบเรียลไทม์
@@ -991,13 +1007,26 @@ const CONFIG = {
   SHEET_NAME: 'บันทึกผลงานกิจกรรม'
 };
 
-function getOrCreateSubfolder(parentFolder, folderName) {
+function getOrCreateSubfolder(parentFolder, folderName, aliases) {
   var cleanName = (folderName || 'ทั่วไป').toString().trim();
   if (!cleanName || cleanName === '-') cleanName = 'ทั่วไป';
+  
+  // 1. ตรวจสอบชื่อตรงเป๊ะ
   var folders = parentFolder.getFoldersByName(cleanName);
   if (folders.hasNext()) {
     return folders.next();
   }
+  
+  // 2. หากมีชื่อเรียกเดิม (aliases) ให้ตรวจและใช้อันเดิม ไม่สร้างโฟลเดอร์ซ้ำซ้อน
+  if (aliases && Array.isArray(aliases)) {
+    for (var a = 0; a < aliases.length; a++) {
+      var aliasFolders = parentFolder.getFoldersByName(aliases[a]);
+      if (aliasFolders.hasNext()) {
+        return aliasFolders.next();
+      }
+    }
+  }
+  
   return parentFolder.createFolder(cleanName);
 }
 
@@ -1038,14 +1067,14 @@ function doPost(e) {
     var outcomes = data.outcomes || '';
     var timestamp = new Date().toLocaleString('th-TH');
 
-    // 1. จัดการโครงสร้างโฟลเดอร์ Google Drive:
-    // Activities (1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym)
+    // 1. จัดการโครงสร้างโฟลเดอร์ใน Activities (ID: 1AcKRJm0FwiSNYYr2TaEGY34t74n9S-Ym) เท่านั้น
+    // Activities
     //   └── 1. กลุ่มสาระการเรียนรู้
-    //         └── 2. ชื่อของครูที่ส่งผลงาน
-    //               └── 3. ผลงาน
-    //                     ├── รูปกิจกรรม (ภาพถ่ายกิจกรรม 1-3 รูป)
-    //                     ├── เกียรติบัตร (ไฟล์เกียรติบัตร)
-    //                     └── ไฟล์เอกสาร (ไฟล์เอกสารเพิ่มเติม)
+    //         └── 2. ชื่อครูในกลุ่มสาระนั้นๆ
+    //               └── 3. ผลงานของครูในแต่ละคนแยกไปเลย
+    //                     ├── ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)
+    //                     ├── ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)
+    //                     └── ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)
     var uploaderFolderUrl = '';
     var photoUrls = [];
     var certUrls = [];
@@ -1054,21 +1083,21 @@ function doPost(e) {
     try {
       var rootFolder = DriveApp.getFolderById(folderId);
 
-      // ระดับ 1: กลุ่มสาระการเรียนรู้ (เช่น 3. วิทยาศาสตร์และเทคโนโลยี)
+      // ระดับ 1: โฟลเดอร์กลุ่มสาระในโฟลเดอร์ Activities
       var deptFolder = getOrCreateSubfolder(rootFolder, department);
 
-      // ระดับ 2: ชื่อของครูที่ส่งผลงาน
+      // ระดับ 2: ชื่อครูในโฟลเดอร์กลุ่มสาระนั้นๆ
       var teacherFolder = getOrCreateSubfolder(deptFolder, teacherName);
 
-      // ระดับ 3: ผลงาน (ชื่อรางวัลหรือกิจกรรม)
+      // ระดับ 3: ผลงานของครูในแต่ละคนแยกไปเลยในโฟลเดอร์ครู
       var activityFolderName = (awardName || id).toString().trim();
       var activityFolder = getOrCreateSubfolder(teacherFolder, activityFolderName);
       uploaderFolderUrl = activityFolder.getUrl();
 
       // ระดับ 4: โฟลเดอร์ย่อย 3 โฟลเดอร์ข้างในผลงาน
-      var photosSubfolder = getOrCreateSubfolder(activityFolder, 'รูปกิจกรรม');
-      var certsSubfolder = getOrCreateSubfolder(activityFolder, 'เกียรติบัตร');
-      var docsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เอกสาร');
+      var photosSubfolder = getOrCreateSubfolder(activityFolder, 'ภาพถ่ายกิจกรรม (1–3 รูปต่อกิจกรรม)', ['รูปกิจกรรม', 'ภาพกิจกรรม']);
+      var certsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate)', ['เกียรติบัตร', 'วุฒิบัตร']);
+      var docsSubfolder = getOrCreateSubfolder(activityFolder, 'ไฟล์เอกสารเพิ่มเติม (เช่น คำสั่ง, เล่มรายงาน, แบบประเมิน .PDF)', ['ไฟล์เอกสารเพิ่มเติม', 'ไฟล์เอกสาร', 'เอกสาร']);
 
       // 1) บันทึกรูปภาพกิจกรรม (1–3 รูปต่อกิจกรรม) ลงในโฟลเดอร์ "รูปกิจกรรม"
       var photos = data.photos || [];

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopNav } from './components/TopNav';
 import { Dashboard } from './components/Dashboard';
@@ -21,33 +21,79 @@ import {
   fetchActivitiesFromGoogleSheet,
 } from './services/appsScriptService';
 
+/**
+ * Deep equality check for activity records to avoid re-rendering and flickering
+ * when fetched data is unchanged.
+ */
+function areRecordsEqual(a: ActivityRecord[], b: ActivityRecord[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const itemA = a[i];
+    const itemB = b[i];
+    if (itemA.id !== itemB.id) return false;
+    if (itemA.awardName !== itemB.awardName) return false;
+    if (itemA.awardLevel !== itemB.awardLevel) return false;
+    if (itemA.awardDate !== itemB.awardDate) return false;
+    if (itemA.teacherName !== itemB.teacherName) return false;
+    if (itemA.department !== itemB.department) return false;
+    if ((itemA.photos?.length || 0) !== (itemB.photos?.length || 0)) return false;
+    if ((itemA.certificates?.length || 0) !== (itemB.certificates?.length || 0)) return false;
+    if ((itemA.documents?.length || 0) !== (itemB.documents?.length || 0)) return false;
+  }
+  return true;
+}
+
 export default function App() {
   const [currentTab, setCurrentTab] = useState<'dashboard' | 'list' | 'search' | 'report' | 'teachers' | 'add'>('dashboard');
   const [records, setRecords] = useState<ActivityRecord[]>(() =>
     loadStoredActivities([])
   );
-  const [isLoadingSheet, setIsLoadingSheet] = useState<boolean>(true);
+  const [isLoadingSheet, setIsLoadingSheet] = useState<boolean>(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ActivityRecord | null>(null);
   const [listFilterLevel, setListFilterLevel] = useState<string | undefined>(undefined);
   const [isAppsScriptModalOpen, setIsAppsScriptModalOpen] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
-  // Real-time synchronization: Initial load, 30s polling, and window focus sync
+  const isFetchingRef = useRef<boolean>(false);
+  const lastFocusFetchRef = useRef<number>(0);
+  const recordsRef = useRef<ActivityRecord[]>(records);
+  recordsRef.current = records;
+
+  // Real-time synchronization: Initial load, 30s polling, throttled focus sync
   useEffect(() => {
     let isMounted = true;
 
     const fetchRealData = async (silent = false) => {
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
       if (!silent) setIsLoadingSheet(true);
+
+      // Failsafe timer: guarantee isLoadingSheet is turned off within 3.5s
+      const failsafeTimer = setTimeout(() => {
+        if (isMounted && !silent) {
+          setIsLoadingSheet(false);
+        }
+      }, 3500);
+
       try {
         const liveRecords = await fetchActivitiesFromGoogleSheet();
+        clearTimeout(failsafeTimer);
         if (isMounted) {
-          setRecords(liveRecords);
+          // Anti-flicker: Only update state if data actually changed
+          if (!areRecordsEqual(recordsRef.current, liveRecords)) {
+            setRecords(liveRecords);
+            saveAllActivities(liveRecords);
+          }
           setLastSyncedTime(new Date().toLocaleTimeString('th-TH'));
         }
       } catch (err) {
+        clearTimeout(failsafeTimer);
         console.warn('Real-time sync from Google Sheet note:', err);
       } finally {
+        isFetchingRef.current = false;
         if (isMounted && !silent) {
           setIsLoadingSheet(false);
         }
@@ -55,16 +101,20 @@ export default function App() {
     };
 
     // 1. Initial fetch
-    fetchRealData(false);
+    fetchRealData(recordsRef.current.length > 0);
 
-    // 2. Poll every 30 seconds for live sheet changes
+    // 2. Poll every 45 seconds for live sheet updates
     const intervalId = setInterval(() => {
       fetchRealData(true);
-    }, 30000);
+    }, 45000);
 
-    // 3. Fetch when user switches back to this tab
+    // 3. Throttle window focus sync (minimum 45s between focus refreshes on mobile/tablet)
     const handleWindowFocus = () => {
-      fetchRealData(true);
+      const now = Date.now();
+      if (now - lastFocusFetchRef.current > 45000) {
+        lastFocusFetchRef.current = now;
+        fetchRealData(true);
+      }
     };
     window.addEventListener('focus', handleWindowFocus);
 
@@ -77,14 +127,20 @@ export default function App() {
 
   // Manual sync handler
   const handleSyncFromGoogleSheet = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setIsLoadingSheet(true);
     try {
       const liveRecords = await fetchActivitiesFromGoogleSheet();
-      setRecords(liveRecords);
+      if (!areRecordsEqual(recordsRef.current, liveRecords)) {
+        setRecords(liveRecords);
+        saveAllActivities(liveRecords);
+      }
       setLastSyncedTime(new Date().toLocaleTimeString('th-TH'));
     } catch (err) {
       console.warn('Manual sync failed:', err);
     } finally {
+      isFetchingRef.current = false;
       setIsLoadingSheet(false);
     }
   };

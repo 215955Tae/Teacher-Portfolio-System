@@ -27,6 +27,7 @@ import {
   submitActivityToAppsScript,
   saveRecordToLocalStorage,
   APPS_SCRIPT_CONFIG,
+  formatDisplayDate,
 } from '../services/appsScriptService';
 
 interface ActivityDetailModalProps {
@@ -371,7 +372,7 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
               <span className="text-slate-500 text-xs block">วันที่ได้รับรางวัล:</span>
               <p className="font-medium text-slate-800 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-amber-600 shrink-0" />
-                <span className="font-mono">{record.awardDate}</span>
+                <span className="font-mono">{formatDisplayDate(record.awardDate)}</span>
               </p>
             </div>
           </div>

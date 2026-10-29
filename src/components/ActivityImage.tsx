@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Trophy, ExternalLink, ImageOff, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Trophy, ExternalLink, ImageOff } from 'lucide-react';
 import { extractDriveFileId, getGoogleDriveViewUrl } from '../services/appsScriptService';
 
 interface ActivityImageProps {
@@ -14,6 +14,9 @@ interface ActivityImageProps {
   onClick?: () => void;
 }
 
+// Global cache for images that have already loaded successfully in this session
+const loadedImageCache = new Set<string>();
+
 export const ActivityImage: React.FC<ActivityImageProps> = ({
   src,
   alt = 'ภาพถ่ายกิจกรรม',
@@ -24,16 +27,35 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
   fallbackTitle = 'โรงเรียนพังโคนวิทยาคม',
   onClick,
 }) => {
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const [candidates, setCandidates] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  const target = (src || originalUrl || '').trim();
+  const isAlreadyLoaded = loadedImageCache.has(target);
 
-  // Compute waterfall URL candidates whenever src or originalUrl changes
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [candidates, setCandidates] = useState<string[]>(() => {
+    if (!target) return [];
+    if (target.startsWith('data:') || target.startsWith('blob:')) return [target];
+    const driveId = extractDriveFileId(target);
+    if (driveId) {
+      return [
+        `https://lh3.googleusercontent.com/d/${driveId}=w1000`,
+        `https://drive.google.com/thumbnail?id=${driveId}&sz=w1000`,
+        `https://drive.google.com/uc?export=view&id=${driveId}`,
+      ];
+    }
+    return [target];
+  });
+
+  const [isLoading, setIsLoading] = useState(!isAlreadyLoaded && !!target);
+  const [hasError, setHasError] = useState(false);
+  const prevTargetRef = useRef<string>(target);
+  const candidateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Compute waterfall URL candidates only when target string actually changes
   useEffect(() => {
-    const raw = (src || '').trim();
-    const orig = (originalUrl || '').trim();
-    const target = raw || orig;
+    if (prevTargetRef.current === target && candidates.length > 0) {
+      return;
+    }
+    prevTargetRef.current = target;
 
     if (!target) {
       setCandidates([]);
@@ -46,59 +68,81 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
     if (target.startsWith('data:') || target.startsWith('blob:')) {
       setCandidates([target]);
       setCandidateIndex(0);
-      setIsLoading(false);
+      setIsLoading(!loadedImageCache.has(target));
       setHasError(false);
       return;
     }
 
-    const driveId = extractDriveFileId(target) || extractDriveFileId(orig);
-
+    const driveId = extractDriveFileId(target);
     if (driveId) {
-      // 3 Google CDN/Drive direct thumbnail variations:
-      // 1) lh3.googleusercontent.com/d/ID=w1000 (Fastest CDN, no cookies/auth restrictions)
-      // 2) drive.google.com/thumbnail?id=ID&sz=w1000 (Official thumbnail endpoint)
-      // 3) drive.google.com/uc?export=view&id=ID (Direct download stream)
       const list: string[] = [
         `https://lh3.googleusercontent.com/d/${driveId}=w1000`,
         `https://drive.google.com/thumbnail?id=${driveId}&sz=w1000`,
         `https://drive.google.com/uc?export=view&id=${driveId}`,
       ];
-
-      // If original target had a different URL, add as last resort
       if (target.startsWith('http') && !list.includes(target) && !target.includes('/view')) {
         list.push(target);
       }
-
       setCandidates(list);
       setCandidateIndex(0);
-      setIsLoading(true);
+      setIsLoading(!loadedImageCache.has(list[0]));
       setHasError(false);
     } else if (target.startsWith('http')) {
       setCandidates([target]);
       setCandidateIndex(0);
-      setIsLoading(true);
+      setIsLoading(!loadedImageCache.has(target));
       setHasError(false);
     } else {
       setCandidates([]);
       setIsLoading(false);
       setHasError(true);
     }
-  }, [src, originalUrl]);
+  }, [target]);
 
   const currentUrl = candidates[candidateIndex];
 
+  // Automatic timeout for slow network / stuck Google Drive thumbnails (max 3.5s per candidate)
+  useEffect(() => {
+    if (candidateTimeoutRef.current) {
+      clearTimeout(candidateTimeoutRef.current);
+    }
+
+    if (isLoading && currentUrl && !hasError && !loadedImageCache.has(currentUrl)) {
+      candidateTimeoutRef.current = setTimeout(() => {
+        if (candidateIndex + 1 < candidates.length) {
+          setCandidateIndex((prev) => prev + 1);
+        } else {
+          setIsLoading(false);
+          setHasError(true);
+        }
+      }, 3500);
+    }
+
+    return () => {
+      if (candidateTimeoutRef.current) {
+        clearTimeout(candidateTimeoutRef.current);
+      }
+    };
+  }, [candidateIndex, currentUrl, isLoading, hasError, candidates.length]);
+
   const handleImageError = () => {
+    if (candidateTimeoutRef.current) {
+      clearTimeout(candidateTimeoutRef.current);
+    }
     if (candidateIndex + 1 < candidates.length) {
-      // Try next alternative source
       setCandidateIndex((prev) => prev + 1);
     } else {
-      // All alternatives exhausted
       setIsLoading(false);
       setHasError(true);
     }
   };
 
   const handleImageLoad = () => {
+    if (candidateTimeoutRef.current) {
+      clearTimeout(candidateTimeoutRef.current);
+    }
+    if (target) loadedImageCache.add(target);
+    if (currentUrl) loadedImageCache.add(currentUrl);
     setIsLoading(false);
     setHasError(false);
   };
@@ -107,10 +151,10 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
 
   return (
     <div className={containerClassName} onClick={onClick}>
-      {/* Loading state indicator */}
+      {/* Non-flickering background placeholder */}
       {isLoading && currentUrl && !hasError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-100 text-slate-400 z-10 animate-pulse">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+        <div className="absolute inset-0 bg-slate-100 flex items-center justify-center z-10 transition-opacity duration-300">
+          <div className="w-5 h-5 rounded-full border-2 border-slate-300 border-t-blue-500 animate-spin" />
         </div>
       )}
 
@@ -122,19 +166,20 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
           alt={alt}
           referrerPolicy="no-referrer"
           loading="lazy"
+          decoding="async"
           onLoad={handleImageLoad}
           onError={handleImageError}
-          className={`${className} transition-opacity duration-300 ${
+          className={`${className} transition-opacity duration-200 ${
             isLoading ? 'opacity-0' : 'opacity-100'
           }`}
         />
       ) : (
         /* Fallback placeholder when no photo exists or image failed */
-        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/40 to-slate-100 text-slate-400 p-4 select-none">
+        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-100 text-slate-400 p-4 select-none">
           {hasError && currentUrl ? (
-            <ImageOff className="w-10 h-10 text-slate-300 mb-1" />
+            <ImageOff className="w-9 h-9 text-slate-300 mb-1" />
           ) : (
-            <Trophy className="w-10 h-10 text-slate-300 mb-1" />
+            <Trophy className="w-9 h-9 text-slate-300 mb-1" />
           )}
           <span className="text-xs text-slate-400 font-medium text-center">
             {fallbackTitle}

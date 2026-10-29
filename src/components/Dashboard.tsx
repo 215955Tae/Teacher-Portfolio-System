@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
+import { getPreviewMedia, formatDisplayDate } from '../services/appsScriptService';
 
 interface DashboardProps {
   records: ActivityRecord[];
@@ -727,23 +728,34 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   className="group py-4 px-3 -mx-3 rounded-lg hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer"
                 >
                   <div className="flex items-start gap-3.5">
-                    {/* ภาพตัวอย่างผลงาน หรือ ไอคอนถ้วยรางวัล */}
-                    {act.photos && act.photos.length > 0 && (act.photos[0].url || act.photos[0].base64) ? (
-                      <div className="w-11 h-11 rounded-lg overflow-hidden border border-slate-200 shrink-0 mt-0.5 group-hover:scale-105 transition-transform bg-slate-100">
-                        <ActivityImage
-                          src={act.photos[0].url || (act.photos[0].base64 ? `data:${act.photos[0].type};base64,${act.photos[0].base64}` : '')}
-                          originalUrl={act.photos[0].originalUrl}
-                          alt={act.awardName}
-                          containerClassName="w-full h-full"
-                          className="w-full h-full object-cover"
-                          fallbackTitle=""
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                        <Trophy className="w-5 h-5" />
-                      </div>
-                    )}
+                    {/* ภาพตัวอย่างผลงาน หรือ ไอคอนถ้วยรางวัล (ยึดภาพกิจกรรมเป็นหลัก และรองรับเกียรติบัตร) */}
+                    {(() => {
+                      const preview = getPreviewMedia(act);
+                      if (preview.kind !== 'none') {
+                        return (
+                          <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 mt-0.5 group-hover:scale-105 transition-transform bg-slate-100 relative">
+                            <ActivityImage
+                              src={preview.url}
+                              originalUrl={preview.originalUrl}
+                              alt={act.awardName}
+                              containerClassName="w-full h-full"
+                              className="w-full h-full object-cover"
+                              fallbackTitle=""
+                            />
+                            {preview.kind === 'certificate' && (
+                              <div className="absolute top-0.5 right-0.5 bg-amber-600/90 text-white rounded-full p-0.5 shadow-xs">
+                                <Award className="w-2.5 h-2.5" />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="w-11 h-11 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
+                          <Trophy className="w-5 h-5" />
+                        </div>
+                      );
+                    })()}
 
                     <div className="space-y-0.5">
                       {/* ชื่อผลงาน (ข้อความหลัก) */}
@@ -786,7 +798,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       {/* วันที่ประกาศผลงาน (ข้อความเล็กด้านล่าง) */}
                       <p className="text-[11px] text-slate-400 flex items-center gap-1 pt-0.5">
                         <Calendar className="w-3 h-3" />
-                        <span>วันที่ประกาศผล/ได้รับรางวัล: {act.awardDate}</span>
+                        <span>วันที่ประกาศผล/ได้รับรางวัล: {formatDisplayDate(act.awardDate)}</span>
                       </p>
                     </div>
                   </div>

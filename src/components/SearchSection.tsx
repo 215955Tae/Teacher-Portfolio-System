@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { ActivityRecord, AwardLevel } from '../types';
 import { DEPARTMENTS, AWARD_LEVELS, ACADEMIC_YEARS } from '../data/initialData';
+import { ActivityImage } from './ActivityImage';
+import { formatDisplayDate, getPreviewMedia } from '../services/appsScriptService';
 
 interface SearchSectionProps {
   records: ActivityRecord[];
@@ -229,31 +231,50 @@ export const SearchSection: React.FC<SearchSectionProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {searchResults.map((rec) => {
               const recipient = rec.teacherName || rec.studentName || '-';
+              const preview = getPreviewMedia(rec);
+
               return (
                 <div
                   key={rec.id}
                   onClick={() => onSelectRecord(rec)}
                   className="group bg-white rounded-xl shadow-md p-5 border border-slate-200 hover:shadow-xl transition-all duration-200 cursor-pointer flex flex-col justify-between hover:-translate-y-0.5"
                 >
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
+                      <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md truncate max-w-[180px]">
                         {rec.department}
                       </span>
-                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 shrink-0">
                         {rec.awardLevel}
                       </span>
                     </div>
 
-                    <h4 className="text-sm font-bold text-slate-900 group-hover:text-purple-700 transition-colors line-clamp-2">
-                      {rec.awardName}
-                    </h4>
+                    <div className="flex items-start gap-3">
+                      {preview.kind !== 'none' && (
+                        <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-slate-100">
+                          <ActivityImage
+                            src={preview.url}
+                            originalUrl={preview.originalUrl}
+                            alt={rec.awardName}
+                            containerClassName="w-full h-full"
+                            className="w-full h-full object-cover"
+                            fallbackTitle=""
+                          />
+                        </div>
+                      )}
 
-                    {rec.objective && (
-                      <p className="text-xs text-slate-500 line-clamp-2">
-                        {rec.objective}
-                      </p>
-                    )}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-bold text-slate-900 group-hover:text-purple-700 transition-colors line-clamp-2">
+                          {rec.awardName}
+                        </h4>
+
+                        {rec.objective && (
+                          <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                            {rec.objective}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
@@ -262,7 +283,7 @@ export const SearchSection: React.FC<SearchSectionProps> = ({
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                         <span>ปี {rec.academicYear}</span>
                       </div>
-                      <span className="text-slate-400">{rec.awardDate}</span>
+                      <span className="text-slate-400">{formatDisplayDate(rec.awardDate)}</span>
                     </div>
 
                     <div className="flex items-center justify-between pt-1">

@@ -23,7 +23,7 @@ import {
 import { ActivityImage } from './ActivityImage';
 import { ActivityRecord, AwardLevel } from '../types';
 import { DEPARTMENTS } from '../data/initialData';
-import { getPreviewMedia } from '../services/appsScriptService';
+import { getPreviewMedia, formatDisplayDate } from '../services/appsScriptService';
 
 interface TeacherEvaluationProps {
   records: ActivityRecord[];
@@ -691,7 +691,7 @@ export const TeacherEvaluation: React.FC<TeacherEvaluationProps> = ({
                               </div>
                               <p className="text-xs text-slate-500 mt-0.5">
                                 {item.organizer} · ปีการศึกษา {item.academicYear} · วันที่:{' '}
-                                {item.awardDate}
+                                {formatDisplayDate(item.awardDate)}
                               </p>
                             </div>
                           </div>
