@@ -41,6 +41,8 @@ function areRecordsEqual(a: ActivityRecord[], b: ActivityRecord[]): boolean {
     if ((itemA.photos?.length || 0) !== (itemB.photos?.length || 0)) return false;
     if ((itemA.certificates?.length || 0) !== (itemB.certificates?.length || 0)) return false;
     if ((itemA.documents?.length || 0) !== (itemB.documents?.length || 0)) return false;
+    if ((itemA.photos?.[0]?.url || '') !== (itemB.photos?.[0]?.url || '')) return false;
+    if ((itemA.certificates?.[0]?.url || '') !== (itemB.certificates?.[0]?.url || '')) return false;
   }
   return true;
 }

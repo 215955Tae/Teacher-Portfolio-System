@@ -422,12 +422,15 @@ function parseActivityRecordsFromMatrix(headers: string[], dataRows: string[][])
       const clean = (h || '').toLowerCase().replace(/[\s\-_/()]/g, '');
       return keywords.some((kw) => {
         const kwClean = kw.toLowerCase().replace(/[\s\-_/()]/g, '');
-        return clean.includes(kwClean) || kwClean.includes(clean);
+        if (clean === kwClean) return true;
+        if (clean.includes(kwClean)) return true;
+        if (clean.length > 3 && kwClean.includes(clean)) return true;
+        return false;
       });
     });
   };
 
-  const idCol = findIdx(['รหัสกิจกรรม', 'id']);
+  const idCol = findIdx(['id', 'รหัสกิจกรรม', 'รหัส']);
   const timeCol = findIdx(['วันเวลาที่บันทึก', 'timestamp', 'เวลา']);
   const yearCol = findIdx(['ปีการศึกษา', 'year']);
   const levelCol = findIdx(['ระดับรางวัล', 'ระดับ', 'level']);
@@ -444,7 +447,7 @@ function parseActivityRecordsFromMatrix(headers: string[], dataRows: string[][])
   const certsCol = findIdx(['ลิงก์เกียรติบัตร', 'เกียรติบัตร', 'cert', 'certificate']);
   const docsCol = findIdx(['ลิงก์เอกสารหลักฐานเพิ่มเติม', 'เอกสาร', 'doc', 'document', 'pdf']);
   const folderCol = findIdx(['โฟลเดอร์ผู้อัปโหลดใน Drive', 'โฟลเดอร์', 'folder', 'drive']);
-  const evidenceJsonCol = findIdx(['ไฟล์หลักฐาน(json)', 'evidence', 'ไฟล์หลักฐาน']);
+  const evidenceJsonCol = findIdx(['ไฟล์หลักฐานjson', 'ไฟล์หลักฐาน', 'evidence', 'evidencejson']);
 
   const records: ActivityRecord[] = [];
 
@@ -485,8 +488,25 @@ function parseActivityRecordsFromMatrix(headers: string[], dataRows: string[][])
     let certUrls: string[] = [];
     let docUrls: string[] = [];
 
-    // Check JSON evidence column if available (Format 1)
-    if (evidenceJsonCol >= 0) {
+    // 1. Universal scan: check all cells in row for JSON evidence (Format 1)
+    for (let c = 0; c < row.length; c++) {
+      const cellVal = getVal(c);
+      if (
+        cellVal.startsWith('{') &&
+        (cellVal.includes('photos') || cellVal.includes('certificates') || cellVal.includes('documents') || cellVal.includes('folderUrl'))
+      ) {
+        try {
+          const parsed = JSON.parse(cellVal);
+          if (Array.isArray(parsed.photos)) photoUrls.push(...parsed.photos);
+          if (Array.isArray(parsed.certificates)) certUrls.push(...parsed.certificates);
+          if (Array.isArray(parsed.documents)) docUrls.push(...parsed.documents);
+          if (!folderUrl && parsed.folderUrl) folderUrl = parsed.folderUrl;
+        } catch (e) {}
+      }
+    }
+
+    // 2. Check JSON evidence column if available and not yet loaded
+    if (evidenceJsonCol >= 0 && photoUrls.length === 0 && certUrls.length === 0) {
       const rawEvidence = getVal(evidenceJsonCol);
       if (rawEvidence && rawEvidence.startsWith('{')) {
         try {
@@ -499,7 +519,7 @@ function parseActivityRecordsFromMatrix(headers: string[], dataRows: string[][])
       }
     }
 
-    // Check separate columns (Format 2)
+    // 3. Check separate columns (Format 2)
     if (photosCol >= 0) {
       const rawP = getVal(photosCol);
       if (rawP) photoUrls.push(...extractUrlsFromText(rawP));

@@ -21,7 +21,7 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
   src,
   alt = 'ภาพถ่ายกิจกรรม',
   className = 'w-full h-full object-cover',
-  containerClassName = 'relative w-full h-full overflow-hidden bg-slate-100',
+  containerClassName = 'relative w-full h-full overflow-hidden bg-slate-900',
   originalUrl,
   showOpenButton = false,
   fallbackTitle = 'โรงเรียนพังโคนวิทยาคม',
@@ -48,7 +48,6 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
   const [isLoading, setIsLoading] = useState(!isAlreadyLoaded && !!target);
   const [hasError, setHasError] = useState(false);
   const prevTargetRef = useRef<string>(target);
-  const candidateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Compute waterfall URL candidates only when target string actually changes
   useEffect(() => {
@@ -101,34 +100,8 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
 
   const currentUrl = candidates[candidateIndex];
 
-  // Automatic timeout for slow network / stuck Google Drive thumbnails (max 3.5s per candidate)
-  useEffect(() => {
-    if (candidateTimeoutRef.current) {
-      clearTimeout(candidateTimeoutRef.current);
-    }
-
-    if (isLoading && currentUrl && !hasError && !loadedImageCache.has(currentUrl)) {
-      candidateTimeoutRef.current = setTimeout(() => {
-        if (candidateIndex + 1 < candidates.length) {
-          setCandidateIndex((prev) => prev + 1);
-        } else {
-          setIsLoading(false);
-          setHasError(true);
-        }
-      }, 3500);
-    }
-
-    return () => {
-      if (candidateTimeoutRef.current) {
-        clearTimeout(candidateTimeoutRef.current);
-      }
-    };
-  }, [candidateIndex, currentUrl, isLoading, hasError, candidates.length]);
-
   const handleImageError = () => {
-    if (candidateTimeoutRef.current) {
-      clearTimeout(candidateTimeoutRef.current);
-    }
+    // Advance to next candidate if available, otherwise mark as error
     if (candidateIndex + 1 < candidates.length) {
       setCandidateIndex((prev) => prev + 1);
     } else {
@@ -138,9 +111,6 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
   };
 
   const handleImageLoad = () => {
-    if (candidateTimeoutRef.current) {
-      clearTimeout(candidateTimeoutRef.current);
-    }
     if (target) loadedImageCache.add(target);
     if (currentUrl) loadedImageCache.add(currentUrl);
     setIsLoading(false);
@@ -151,10 +121,10 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
 
   return (
     <div className={containerClassName} onClick={onClick}>
-      {/* Non-flickering background placeholder */}
+      {/* Subtle non-blocking spinner: never use an opaque white background */}
       {isLoading && currentUrl && !hasError && (
-        <div className="absolute inset-0 bg-slate-100 flex items-center justify-center z-10 transition-opacity duration-300">
-          <div className="w-5 h-5 rounded-full border-2 border-slate-300 border-t-blue-500 animate-spin" />
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <div className="w-6 h-6 rounded-full border-2 border-slate-600/40 border-t-blue-400 animate-spin" />
         </div>
       )}
 
@@ -165,48 +135,45 @@ export const ActivityImage: React.FC<ActivityImageProps> = ({
           src={currentUrl}
           alt={alt}
           referrerPolicy="no-referrer"
-          loading="lazy"
           decoding="async"
           onLoad={handleImageLoad}
           onError={handleImageError}
-          className={`${className} transition-opacity duration-200 ${
-            isLoading ? 'opacity-0' : 'opacity-100'
-          }`}
+          className={`${className} transition-opacity duration-200`}
         />
       ) : (
         /* Fallback placeholder when no photo exists or image failed */
-        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-100 text-slate-400 p-4 select-none">
+        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 text-slate-400 p-4 select-none">
           {hasError && currentUrl ? (
-            <ImageOff className="w-9 h-9 text-slate-300 mb-1" />
+            <ImageOff className="w-8 h-8 text-slate-500 mb-1" />
           ) : (
-            <Trophy className="w-9 h-9 text-slate-300 mb-1" />
+            <Trophy className="w-8 h-8 text-slate-500 mb-1" />
           )}
           <span className="text-xs text-slate-400 font-medium text-center">
             {fallbackTitle}
           </span>
-          {hasError && driveViewUrl && (
+          {driveViewUrl && (
             <a
               href={driveViewUrl}
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors"
+              className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-blue-300 bg-blue-950/80 hover:bg-blue-900 rounded-md border border-blue-700/60 transition-colors"
             >
-              <span>เปิดดูภาพใน Drive</span>
+              <span>เปิดดูภาพใน Google Drive</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           )}
         </div>
       )}
 
-      {/* Optional Top/Bottom overlay button to open in Drive */}
+      {/* Optional Top overlay button to open in Drive */}
       {showOpenButton && driveViewUrl && (
         <a
           href={driveViewUrl}
           target="_blank"
           rel="noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="absolute top-2 right-2 z-20 inline-flex items-center gap-1 px-2 py-1 bg-black/60 hover:bg-black/80 text-white text-[10px] font-medium rounded-md backdrop-blur-xs shadow-md transition-all"
+          className="absolute top-2 right-2 z-20 inline-flex items-center gap-1 px-2.5 py-1 bg-black/70 hover:bg-black/90 text-white text-[11px] font-medium rounded-md backdrop-blur-xs shadow-md transition-all border border-white/20"
           title="เปิดดูภาพต้นฉบับใน Google Drive"
         >
           <span>เปิดภาพใน Drive</span>

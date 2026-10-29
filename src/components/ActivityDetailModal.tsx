@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Trophy,
@@ -42,13 +42,25 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
   onUpdateRecord,
 }) => {
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [activeCertIdx, setActiveCertIdx] = useState(0);
+  const [activeMediaTab, setActiveMediaTab] = useState<'photos' | 'certificates'>('photos');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  if (!record) return null;
+  const photos = record?.photos || [];
+  const certificates = record?.certificates || [];
+  const documents = record?.documents || [];
 
-  const photos = record.photos || [];
-  const certificates = record.certificates || [];
-  const documents = record.documents || [];
+  useEffect(() => {
+    setActivePhotoIdx(0);
+    setActiveCertIdx(0);
+    if ((record?.certificates?.length || 0) > 0 && (record?.photos?.length || 0) === 0) {
+      setActiveMediaTab('certificates');
+    } else {
+      setActiveMediaTab('photos');
+    }
+  }, [record?.id, record?.photos?.length, record?.certificates?.length]);
+
+  if (!record) return null;
 
   const handleAddPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !record) return;
@@ -166,141 +178,224 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Photo / Certificate Showcase Gallery or Upload Prompt */}
-          {photos.length > 0 ? (
+          {/* Top Showcase: Switcher between Photos and Certificates */}
+          {photos.length > 0 || certificates.length > 0 ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-                  <ImageIcon className="w-4 h-4 text-pink-500" />
-                  <span>ภาพถ่ายกิจกรรม ({photos.length} รูป)</span>
-                </h3>
-                {photos.length < 3 && (
-                  <label className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors">
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>{isUploadingPhoto ? 'กำลังอัปโหลด...' : '+ เพิ่มรูปถ่าย'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      disabled={isUploadingPhoto}
-                      onChange={handleAddPhoto}
-                    />
-                  </label>
-                )}
-              </div>
-
-              <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center group">
-                <ActivityImage
-                  src={
-                    photos[activePhotoIdx]?.url ||
-                    (photos[activePhotoIdx]?.base64
-                      ? `data:${photos[activePhotoIdx].type};base64,${photos[activePhotoIdx].base64}`
-                      : '')
-                  }
-                  originalUrl={photos[activePhotoIdx]?.originalUrl}
-                  alt={photos[activePhotoIdx]?.name || record.awardName}
-                  className="w-full h-full object-contain"
-                  containerClassName="w-full h-full flex items-center justify-center bg-slate-950"
-                  showOpenButton={true}
-                  fallbackTitle="ภาพถ่ายกิจกรรม"
-                />
-
-                {photos.length > 1 && (
-                  <>
+              {/* Media Mode Header / Switcher */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-1 gap-2">
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                  {photos.length > 0 && (
                     <button
-                      onClick={() =>
-                        setActivePhotoIdx((prev) =>
-                          prev === 0 ? photos.length - 1 : prev - 1
-                        )
-                      }
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() =>
-                        setActivePhotoIdx((prev) =>
-                          prev === photos.length - 1 ? 0 : prev + 1
-                        )
-                      }
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </>
-                )}
-
-                <span className="absolute bottom-2 left-3 bg-black/70 text-white text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none">
-                  {photos[activePhotoIdx]?.name || 'ภาพกิจกรรม'} ({activePhotoIdx + 1}/{photos.length})
-                </span>
-              </div>
-
-              {/* Thumbnails row */}
-              {photos.length > 1 && (
-                <div className="flex gap-2">
-                  {photos.map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setActivePhotoIdx(idx)}
-                      className={`relative w-20 h-14 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
-                        activePhotoIdx === idx
-                          ? 'border-red-600 scale-105'
-                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                      type="button"
+                      onClick={() => setActiveMediaTab('photos')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        activeMediaTab === 'photos'
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      <ActivityImage
-                        src={p.url || (p.base64 ? `data:${p.type};base64,${p.base64}` : '')}
-                        originalUrl={p.originalUrl}
-                        alt={p.name}
-                        className="w-full h-full object-cover"
-                        containerClassName="w-full h-full"
-                        fallbackTitle=""
-                      />
+                      <ImageIcon className="w-3.5 h-3.5 text-pink-500" />
+                      <span>ภาพถ่ายกิจกรรม ({photos.length})</span>
                     </button>
-                  ))}
+                  )}
+
+                  {certificates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveMediaTab('certificates')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        activeMediaTab === 'certificates'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'text-amber-800 hover:text-amber-950'
+                      }`}
+                    >
+                      <Award className="w-3.5 h-3.5 text-amber-200" />
+                      <span>ไฟล์เกียรติบัตร / วุฒิบัตร ({certificates.length})</span>
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          ) : certificates.length > 0 && (certificates[0].url || certificates[0].base64) ? (
-            /* Second priority: Display Certificate showcase when no photos are attached */
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-                  <Award className="w-4 h-4 text-amber-500" />
-                  <span>ตัวอย่างผลงาน: เกียรติบัตร / วุฒิบัตร ({certificates.length} รายการ)</span>
-                </h3>
-                <label className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors">
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>{isUploadingPhoto ? 'กำลังบันทึก...' : '+ เพิ่มภาพถ่ายกิจกรรม'}</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    disabled={isUploadingPhoto}
-                    onChange={handleAddPhoto}
-                  />
-                </label>
+
+                <div className="flex items-center gap-2">
+                  {photos.length < 3 && (
+                    <label className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-md transition-colors">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>{isUploadingPhoto ? 'กำลังอัปโหลด...' : '+ เพิ่มรูปถ่าย'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={isUploadingPhoto}
+                        onChange={handleAddPhoto}
+                      />
+                    </label>
+                  )}
+
+                  <label className="text-xs font-bold text-amber-700 hover:text-amber-800 cursor-pointer flex items-center gap-1 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-md transition-colors">
+                    <Award className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{isUploadingPhoto ? 'กำลังอัปโหลด...' : '+ แนบเกียรติบัตร'}</span>
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      disabled={isUploadingPhoto}
+                      onChange={handleAddCertificate}
+                    />
+                  </label>
+                </div>
               </div>
 
-              <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center group border border-amber-300">
-                <ActivityImage
-                  src={
-                    certificates[0].url ||
-                    (certificates[0].base64
-                      ? `data:${certificates[0].type};base64,${certificates[0].base64}`
-                      : '')
-                  }
-                  originalUrl={certificates[0].originalUrl}
-                  alt={certificates[0].name}
-                  className="w-full h-full object-contain"
-                  containerClassName="w-full h-full flex items-center justify-center bg-slate-900"
-                  showOpenButton={true}
-                  fallbackTitle="เกียรติบัตร / วุฒิบัตร"
-                />
-                <span className="absolute bottom-2 left-3 bg-amber-900/80 text-amber-100 text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none">
-                  {certificates[0].name} (เกียรติบัตร)
-                </span>
-              </div>
+              {/* ACTIVE TAB: PHOTOS */}
+              {activeMediaTab === 'photos' && photos.length > 0 && (
+                <div className="space-y-3">
+                  <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video flex items-center justify-center group">
+                    <ActivityImage
+                      src={
+                        photos[activePhotoIdx]?.url ||
+                        (photos[activePhotoIdx]?.base64
+                          ? `data:${photos[activePhotoIdx].type};base64,${photos[activePhotoIdx].base64}`
+                          : '')
+                      }
+                      originalUrl={photos[activePhotoIdx]?.originalUrl}
+                      alt={photos[activePhotoIdx]?.name || record.awardName}
+                      className="w-full h-full object-contain"
+                      containerClassName="w-full h-full flex items-center justify-center bg-slate-950"
+                      showOpenButton={true}
+                      fallbackTitle="ภาพถ่ายกิจกรรม"
+                    />
+
+                    {photos.length > 1 && (
+                      <>
+                        <button
+                          onClick={() =>
+                            setActivePhotoIdx((prev) =>
+                              prev === 0 ? photos.length - 1 : prev - 1
+                            )
+                          }
+                          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
+                        >
+                          <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() =>
+                            setActivePhotoIdx((prev) =>
+                              prev === photos.length - 1 ? 0 : prev + 1
+                            )
+                          }
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+
+                    <span className="absolute bottom-2 left-3 bg-black/70 text-white text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none">
+                      {photos[activePhotoIdx]?.name || 'ภาพกิจกรรม'} ({activePhotoIdx + 1}/{photos.length})
+                    </span>
+                  </div>
+
+                  {photos.length > 1 && (
+                    <div className="flex gap-2">
+                      {photos.map((p, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setActivePhotoIdx(idx)}
+                          className={`relative w-20 h-14 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                            activePhotoIdx === idx
+                              ? 'border-red-600 scale-105'
+                              : 'border-slate-200 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <ActivityImage
+                            src={p.url || (p.base64 ? `data:${p.type};base64,${p.base64}` : '')}
+                            originalUrl={p.originalUrl}
+                            alt={p.name}
+                            className="w-full h-full object-cover"
+                            containerClassName="w-full h-full"
+                            fallbackTitle=""
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ACTIVE TAB: CERTIFICATES */}
+              {activeMediaTab === 'certificates' && certificates.length > 0 && (
+                <div className="space-y-3">
+                  <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-video flex items-center justify-center group border border-amber-300">
+                    <ActivityImage
+                      src={
+                        certificates[activeCertIdx]?.url ||
+                        (certificates[activeCertIdx]?.base64
+                          ? `data:${certificates[activeCertIdx].type};base64,${certificates[activeCertIdx].base64}`
+                          : '')
+                      }
+                      originalUrl={certificates[activeCertIdx]?.originalUrl}
+                      alt={certificates[activeCertIdx]?.name || 'เกียรติบัตร'}
+                      className="w-full h-full object-contain"
+                      containerClassName="w-full h-full flex items-center justify-center bg-slate-900"
+                      showOpenButton={true}
+                      fallbackTitle="เกียรติบัตร / วุฒิบัตร"
+                    />
+
+                    {certificates.length > 1 && (
+                      <>
+                        <button
+                          onClick={() =>
+                            setActiveCertIdx((prev) =>
+                              prev === 0 ? certificates.length - 1 : prev - 1
+                            )
+                          }
+                          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
+                        >
+                          <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() =>
+                            setActiveCertIdx((prev) =>
+                              prev === certificates.length - 1 ? 0 : prev + 1
+                            )
+                          }
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors z-20 cursor-pointer"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+
+                    <span className="absolute bottom-2 left-3 bg-amber-900/90 text-amber-100 text-xs px-2.5 py-1 rounded-md backdrop-blur-xs font-medium z-20 pointer-events-none flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{certificates[activeCertIdx]?.name || 'เกียรติบัตร'} ({activeCertIdx + 1}/{certificates.length})</span>
+                    </span>
+                  </div>
+
+                  {certificates.length > 1 && (
+                    <div className="flex gap-2">
+                      {certificates.map((c, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveCertIdx(idx)}
+                          className={`relative w-20 h-14 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                            activeCertIdx === idx
+                              ? 'border-amber-500 scale-105'
+                              : 'border-slate-200 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <ActivityImage
+                            src={c.url || (c.base64 ? `data:${c.type};base64,${c.base64}` : '')}
+                            originalUrl={c.originalUrl}
+                            alt={c.name}
+                            className="w-full h-full object-cover"
+                            containerClassName="w-full h-full"
+                            fallbackTitle="เกียรติบัตร"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             /* Upload area when record currently has no photos or certificates */
@@ -416,67 +511,110 @@ export const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({
             )}
           </div>
 
-          {/* Certificates (เกียรติบัตร) */}
-          {certificates.length > 0 && (
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Award className="w-4 h-4 text-amber-500" />
-                <span>เกียรติบัตร / วุฒิบัตร ({certificates.length} รายการ)</span>
+          {/* Certificates (ไฟล์เกียรติบัตร / วุฒิบัตร) */}
+          <div className="space-y-3 pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
+                <Award className="w-4 h-4 text-amber-600" />
+                <span>ไฟล์เกียรติบัตร / วุฒิบัตร (Certificate) ({certificates.length} รายการ)</span>
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+
+              <label className="text-xs font-bold text-amber-700 hover:text-amber-800 cursor-pointer flex items-center gap-1 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-md transition-colors border border-amber-200">
+                <Award className="w-3.5 h-3.5 text-amber-600" />
+                <span>{isUploadingPhoto ? 'กำลังบันทึก...' : '+ แนบเกียรติบัตรเพิ่ม'}</span>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  disabled={isUploadingPhoto}
+                  onChange={handleAddCertificate}
+                />
+              </label>
+            </div>
+
+            {certificates.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {certificates.map((cert, idx) => {
                   const isImage = cert.type.startsWith('image/');
                   return (
                     <div
                       key={idx}
-                      className="flex items-center justify-between p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs shadow-2xs"
+                      className="group/card p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs shadow-2xs hover:shadow-md transition-all flex flex-col justify-between gap-2.5"
                     >
-                      <div className="flex items-center gap-2.5 truncate">
+                      <div className="flex items-start gap-3">
                         {isImage && (cert.url || cert.base64) ? (
-                          <div className="w-10 h-10 rounded-md overflow-hidden border border-amber-300 shrink-0">
+                          <div
+                            onClick={() => {
+                              setActiveMediaTab('certificates');
+                              setActiveCertIdx(idx);
+                            }}
+                            className="w-16 h-14 rounded-lg overflow-hidden border border-amber-300 shrink-0 cursor-pointer group-hover/card:scale-105 transition-transform bg-slate-900"
+                            title="คลิกเพื่อดูภาพขยายด้านบน"
+                          >
                             <ActivityImage
                               src={cert.url || (cert.base64 ? `data:${cert.type};base64,${cert.base64}` : '')}
                               originalUrl={cert.originalUrl}
                               alt={cert.name}
                               className="w-full h-full object-cover"
                               containerClassName="w-full h-full"
-                              fallbackTitle=""
+                              fallbackTitle="เกียรติบัตร"
                             />
                           </div>
                         ) : (
-                          <div className="w-10 h-10 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                            <Award className="w-5 h-5" />
+                          <div className="w-12 h-12 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                            <Award className="w-6 h-6" />
                           </div>
                         )}
-                        <div className="truncate">
-                          <span className="font-bold text-slate-900 truncate block">
+                        <div className="truncate flex-1">
+                          <span className="font-bold text-slate-900 truncate block text-xs">
                             {cert.name}
                           </span>
-                          <span className="text-[10px] text-amber-700 font-medium">
+                          <span className="text-[10px] text-amber-800 font-semibold block mt-0.5">
                             {isImage ? 'ไฟล์ภาพเกียรติบัตร' : 'เอกสาร PDF'} {cert.size ? `· ${Math.round(cert.size / 1024)} KB` : ''}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            เกียรติบัตรลำดับที่ {idx + 1}
                           </span>
                         </div>
                       </div>
 
-                      {cert.url ? (
-                        <a
-                          href={cert.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-amber-800 hover:text-amber-950 font-bold bg-white border border-amber-300 px-2.5 py-1 rounded-md text-[11px] shrink-0 hover:bg-amber-100/50 transition-colors"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>เปิดดู</span>
-                        </a>
-                      ) : (
-                        <span className="text-amber-700 font-medium text-[11px] shrink-0">แนบในระบบ</span>
-                      )}
+                      <div className="flex items-center justify-between pt-2 border-t border-amber-200/60">
+                        {isImage && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMediaTab('certificates');
+                              setActiveCertIdx(idx);
+                            }}
+                            className="text-amber-800 hover:text-amber-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>ดูรูปขยาย</span>
+                          </button>
+                        )}
+                        {cert.url ? (
+                          <a
+                            href={cert.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-amber-900 font-bold bg-white hover:bg-amber-100/80 border border-amber-300 px-2.5 py-1 rounded-md text-[11px] ml-auto transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>เปิดดูไฟล์</span>
+                          </a>
+                        ) : (
+                          <span className="text-amber-700 font-medium text-[11px] ml-auto">แนบในระบบ</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-4 rounded-xl border border-dashed border-amber-300 bg-amber-50/40 text-center text-xs text-amber-800">
+                ยังไม่มีไฟล์เกียรติบัตร / วุฒิบัตร สำหรับผลงานนี้ สามารถคลิกปุ่ม "+ แนบเกียรติบัตรเพิ่ม" ด้านบนได้
+              </div>
+            )}
+          </div>
 
           {/* Documents attachments (.pdf) */}
           {documents.length > 0 && (
