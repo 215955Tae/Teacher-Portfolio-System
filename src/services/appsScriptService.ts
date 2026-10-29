@@ -1458,4 +1458,48 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+/**
+ * ฟังก์ชันอำนวยความสะดวก (กดเรียกใช้ได้ใน Apps Script):
+ * จัดระเบียบโฟลเดอร์กลุ่มสาระเดิมที่อาจค้างอยู่นอกโฟลเดอร์ปีการศึกษา
+ * ให้ย้ายเข้าไปอยู่ภายใต้โฟลเดอร์ปีการศึกษา "ผลงานปี 2568" โดยอัตโนมัติ
+ */
+function organizeExistingFoldersToYear() {
+  var rootFolder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+  var targetYearFolder = getOrCreateSubfolder(rootFolder, 'ผลงานปี 2568', ['2568', 'ปีการศึกษา 2568']);
+  
+  var deptKeywords = [
+    '1. ภาษาไทย',
+    '2. คณิตศาสตร์',
+    '3. วิทยาศาสตร์และเทคโนโลยี',
+    '4. สังคมศึกษา',
+    '5. สุขศึกษา',
+    '6. ศิลปะ',
+    '7. การงานอาชีพ',
+    '8. ภาษาต่างประเทศ',
+    'กิจกรรมพัฒนาผู้เรียน',
+    'กลุ่มบริหารงานบุคคล'
+  ];
+
+  var subfolders = rootFolder.getFolders();
+  while (subfolders.hasNext()) {
+    var folder = subfolders.next();
+    var fname = folder.getName();
+    // ข้ามโฟลเดอร์ที่เป็นปีการศึกษาอยู่แล้ว
+    if (fname.indexOf('ปี') !== -1 || fname.indexOf('256') !== -1) continue;
+
+    var isDept = false;
+    for (var d = 0; d < deptKeywords.length; d++) {
+      if (fname.indexOf(deptKeywords[d]) !== -1) {
+        isDept = true;
+        break;
+      }
+    }
+
+    if (isDept) {
+      folder.moveTo(targetYearFolder);
+      Logger.log('ย้ายโฟลเดอร์ ' + fname + ' เข้าสู่ ' + targetYearFolder.getName() + ' สำเร็จ');
+    }
+  }
+}
 `;

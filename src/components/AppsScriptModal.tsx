@@ -134,17 +134,40 @@ export const AppsScriptModal: React.FC<AppsScriptModalProps> = ({
         </div>
 
         {/* Setup guide footer */}
-        <div className="p-4 bg-slate-900 border-t border-slate-800 text-xs text-slate-400 space-y-2">
+        <div className="p-4 bg-slate-900 border-t border-slate-800 text-xs text-slate-400 space-y-3">
           <div className="flex items-center gap-2 text-slate-200 font-semibold">
-            <HelpCircle className="w-4 h-4 text-blue-400" />
-            <span>ขั้นตอนการติดตั้งใน Google Apps Script:</span>
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+            <span className="text-amber-300 font-bold">ขั้นตอนอัปเดตสคริปต์ให้ทำงานจริง (สำคัญมาก):</span>
           </div>
-          <ol className="list-decimal list-inside space-y-1 text-slate-300 text-[11px]">
-            <li>เปิด <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">Google Apps Script</a> และสร้างโครงการใหม่</li>
-            <li>วางโค้ดทั้งหมดนี้ลงในไฟล์ <strong>Code.gs</strong></li>
-            <li>กด <strong>Deploy (การทำให้ใช้งานได้)</strong> &gt; <strong>New deployment (การทำให้ใช้งานได้ใหม่)</strong></li>
-            <li>เลือกประเภท <strong>Web App</strong> &gt; ตั้งค่า <strong>Execute as: Me</strong> และ <strong>Who has access: Anyone (ทุกคน)</strong></li>
-          </ol>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+            <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-1.5">
+              <span className="text-emerald-400 font-bold block">กรณีที่ 1: อัปเดตในโครงการ Apps Script เดิม (แนะนำ)</span>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300 leading-relaxed">
+                <li>วางโค้ดที่คัดลอกลงในไฟล์ <strong>Code.gs</strong> แทนที่ของเดิมทั้งหมด แล้วกด <strong>บันทึก (Save)</strong></li>
+                <li>คลิกปุ่มสีน้ำเงิน <strong>"ทำให้ใช้งานได้" (Deploy)</strong> ด้านบนขวา</li>
+                <li>เลือก <strong>"จัดการการทำให้ใช้งานได้" (Manage deployments)</strong></li>
+                <li>คลิกไอคอน <strong>ดินสอ (แก้ไข / Edit)</strong> ด้านขวาบนของหน้าต่าง</li>
+                <li>ที่ช่อง <strong>เวอร์ชัน (Version)</strong> คลิกเลือก <strong>"เวอร์ชันใหม่" (New version)</strong> เสมอ!</li>
+                <li>กดปุ่ม <strong>"ทำให้ใช้งานได้" (Deploy)</strong> ด้านล่างขวา เป็นอันเสร็จสิ้น</li>
+              </ol>
+            </div>
+
+            <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-1.5">
+              <span className="text-blue-400 font-bold block">ข้อสังเกตและฟังก์ชันเสริม:</span>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 leading-relaxed">
+                <li className="text-amber-200">
+                  <strong>⚠️ เหตุผลที่โฟลเดอร์ปีไม่ขึ้นก่อนหน้านี้:</strong> หากกดแค่ปุ่ม "บันทึก" (Save) ใน Apps Script แต่ไม่ได้กด Deploy เวอร์ชันใหม่ Google จะยังคงรันโค้ดเก่าอยู่
+                </li>
+                <li>
+                  <strong>โครงสร้าง 5 ระดับ:</strong> Activities ➔ 1.ผลงานปี... ➔ 2.กลุ่มสาระ ➔ 3.ชื่อครู ➔ 4.ผลงาน (ภาพถ่าย, เกียรติบัตร, เอกสาร)
+                </li>
+                <li>
+                  <strong>ฟังก์ชันจัดระเบียบ:</strong> ใน Apps Script มีฟังก์ชัน <code className="text-emerald-300 font-mono">organizeExistingFoldersToYear()</code> สามารถกด "เรียกใช้ (Run)" เพื่อย้ายโฟลเดอร์เดิมที่ตกหล่นเข้าสู่โฟลเดอร์ปีได้ทันที
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </div>
